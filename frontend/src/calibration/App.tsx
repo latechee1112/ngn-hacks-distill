@@ -10,6 +10,12 @@ import {
 } from '../types/calibration'
 import { buildCalibrationFile, downloadCalibrationFile, parseCalibrationFile } from './calibrationFile'
 import { combineGazeStats, computeTrialGazeStats, type TrialGazeStats } from './gaze/aggregate'
+import {
+  buildGazeCalibrationFile,
+  downloadGazeCalibrationFile,
+  fitAffine,
+  residualError,
+} from './gaze/gazeCalibrationFile'
 import DotCalibration from './gaze/DotCalibration'
 import { currentTargetRect, isOnTarget, toPagePoint, type PageGazePoint } from './gaze/hitTest'
 import { GAZE_VIDEO_ID, useGazeTracker } from './gaze/useGazeTracker'
@@ -136,6 +142,7 @@ function App() {
   const [importError, setImportError] = useState('')
   const [importedFromFile, setImportedFromFile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [gazeSaveNote, setGazeSaveNote] = useState('')
 
   // Gaze state lives in refs, not React state - samples arrive many times a
   // second via the tracker's callback and never need a re-render themselves.
@@ -345,33 +352,25 @@ function App() {
 
   // A correct trial click is a free, known (position, was-looking-here)
   // pair - feeding it into the same registerCalibrationPoint used by the
-  // 9-dot phase lets the model keep correcting itself as head position
+  // 9-dot phase lets the mapping keep correcting itself as head position
   // drifts over the session, instead of only fitting once at the start.
   // x/y here are screen pixels (TrialTask's getBoundingClientRect); convert
   // to the tracker's viewport-normalized [-0.5, 0.5] convention - the
   // inverse of hitTest.ts's toPagePoint.
   //
-  // Two deliberate differences from the 9-dot calibration's own call:
-  //   1. maxSamples=2, not the full buffer. adapt() is a real, non-trivial
-  //      TFJS computation (BlazeGaze forward pass + gradient step) with no
-  //      worker (see the top of useGazeTracker.ts) - feeding it the full
-  //      ~8-frame buffer on every correct trial click was expensive enough
-  //      to visibly delay the next trial even with the setTimeout below,
-  //      since the browser can't dispatch your next click until that
-  //      synchronous work clears the main thread. Fewer frames also means
-  //      less leverage for one click in the pooled least-squares fit (the
-  //      library's own pruneCalibData caps total entries at maxPoints=9,
-  //      shared with the calibration dots - a full-weight trial click can
-  //      evict one of the original dots' data outright).
-  //   2. Deferred via setTimeout - lets this handler's caller (the trial's
-  //      click handler, which also advances trialIndex) return and let
-  //      React paint the next trial before this heavier work runs, rather
-  //      than blocking that same render.
+  // maxSamples=4 summarises roughly the 400ms around the click, rather than
+  // the whole ~800ms buffer a calibration dot uses: a dot is a sustained
+  // fixation, whereas a click only tells you where the eye was at the moment
+  // of clicking. It used to be 2 purely to keep WebEyeTrack.adapt()'s cost
+  // down; that call is gone (see useGazeTracker.ts), so this is now chosen
+  // for what makes the median robust rather than for what the main thread
+  // could survive. Called directly - registering a point is a 3x3 solve now,
+  // so there is nothing left worth deferring off the click handler.
   function handleTargetHit(x: number, y: number) {
     if (!gazeEnabledRef.current) return
     const nx = x / window.innerWidth - 0.5
     const ny = y / window.innerHeight - 0.5
-    setTimeout(() => tracker.registerCalibrationPoint(nx, ny, 2), 0)
+    tracker.registerCalibrationPoint(nx, ny, 4)
   }
 
   function handleGazeCalibrationError(message: string) {
@@ -476,6 +475,32 @@ function App() {
     downloadCalibrationFile(buildCalibrationFile(result.profile, result.explanation))
   }
 
+  // Writes out the eye -> screen mapping the dot phase just produced, so the
+  // next run can load it instead of sitting through nine dots again.
+  function handleSaveGazeCalibration() {
+    const pairs = tracker.getCalibrationPairs()
+    // Prefer the mapping actually in use over refitting: they agree, but
+    // saving the live one means the file is exactly what was on screen.
+    const matrix = tracker.getGazeCorrection() ?? fitAffine(pairs)
+    if (!matrix) {
+      setGazeSaveNote(
+        `Couldn't fit a mapping from ${pairs.length} point${pairs.length === 1 ? '' : 's'} — redo the dots with your face in frame.`,
+      )
+      return
+    }
+    downloadGazeCalibrationFile(buildGazeCalibrationFile(pairs, matrix))
+    // Residual is the honest quality signal here: a mapping can always be
+    // fitted, but one fitted through scattered points will put the blob in
+    // the wrong place, and that is much cheaper to notice now than halfway
+    // through the next debugging session.
+    const meanError = residualError(matrix, pairs)
+    setGazeSaveNote(
+      `Saved ${pairs.length} points · mean error ${(meanError * 100).toFixed(1)}% of the viewport${
+        meanError > 0.12 ? ' — high, consider redoing the dots' : ''
+      }.`,
+    )
+  }
+
   // Renders the per-step screen. Kept as a nested function (rather than
   // inline in the final return) so the <video> element below can sit
   // outside this step-conditional entirely - it must stay mounted across
@@ -502,7 +527,7 @@ function App() {
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
           >
             <Icon name="upload" />
-            Already have a calibration file? Load it
+            Dev: load a saved profile and skip everything
           </button>
           {importError && (
             <p role="alert" className="max-w-sm text-meta text-danger-text">
@@ -557,6 +582,23 @@ function App() {
           onTargetHit={handleTargetHit}
           isPractice
         />
+        {/* Development affordance, placed here because this is the first
+            pause after the dot phase - the mapping exists, and the camera is
+            still running. Hidden when the mapping was itself loaded from a
+            file, since re-saving it would just round-trip the same numbers. */}
+        {gazeEnabledRef.current && !tracker.isCorrectionFromFile() && (
+          <div className="flex flex-col items-center gap-2 border-t border-outline pt-4">
+            <button
+              type="button"
+              onClick={handleSaveGazeCalibration}
+              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-meta text-on-surface-muted transition-colors hover:text-on-surface-variant ${FOCUS_RING}`}
+            >
+              <Icon name="download" />
+              Dev: save this eye calibration
+            </button>
+            {gazeSaveNote && <p className="max-w-sm text-meta text-on-surface-variant">{gazeSaveNote}</p>}
+          </div>
+        )}
       </Shell>
     )
   }
@@ -647,10 +689,11 @@ function App() {
           className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
         >
           <Icon name="download" />
-          Save calibration file
+          Save profile file
         </button>
         <p className="max-w-sm text-meta text-on-surface-muted">
-          Saves this profile as a .json you can load from the first screen next time, instead of redoing the tasks.
+          Saves the finished profile as a .json you can load from the first screen to skip the whole wizard. Separate
+          from the eye calibration file, which only stores the gaze mapping and still runs the tasks.
         </p>
       </div>
     </Shell>

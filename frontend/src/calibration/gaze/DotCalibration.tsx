@@ -6,6 +6,7 @@ import {
   CALIBRATION_SETTLE_MS,
   dotToNormalizedPoint,
 } from './calibrationFit'
+import { parseGazeCalibrationFile } from './gazeCalibrationFile'
 import { GAZE_VIDEO_ID, type GazeTracker } from './useGazeTracker'
 
 const FOCUS_RING =
@@ -40,6 +41,31 @@ function DotCalibration({
   const [count, setCount] = useState(COUNTDOWN_FROM)
   const [dotIndex, setDotIndex] = useState(0)
   const startedRef = useRef(false)
+  const [loadError, setLoadError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Development shortcut: install a previously fitted eye -> screen mapping
+  // and skip straight past the dots. onDone() is the same callback the real
+  // sequence ends with, so everything downstream (practice, trials, the gaze
+  // blob) runs exactly as it would have.
+  async function handleGazeFileChosen(event: React.ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget
+    const picked = input.files?.[0]
+    input.value = ''
+    if (!picked) return
+    setLoadError('')
+    const parsed = parseGazeCalibrationFile(await picked.text())
+    if (!parsed.ok) {
+      setLoadError(`Couldn't load that file — ${parsed.error}.`)
+      return
+    }
+    if (parsed.warning) console.warn('[Distill]', parsed.warning)
+    // Points come along with the matrix so later trial clicks refine this
+    // mapping rather than refitting a competing one from their own handful of
+    // pairs.
+    tracker.setGazeCorrection(parsed.file.matrix, parsed.file.points)
+    onDone()
+  }
 
   useEffect(() => {
     if (startedRef.current) return
@@ -124,6 +150,31 @@ function DotCalibration({
           I'm ready
         </button>
         <p className="text-meta text-on-surface-muted">Nothing is recorded — the camera feed never leaves this page.</p>
+
+        {/* Development affordance, kept visually quiet so it reads as a tool
+            rather than a step. */}
+        <div className="mt-2 flex flex-col items-center gap-2 border-t border-outline pt-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleGazeFileChosen}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-meta text-on-surface-muted transition-colors hover:text-on-surface-variant ${FOCUS_RING}`}
+          >
+            <Icon name="upload" />
+            Dev: load a saved eye calibration and skip the dots
+          </button>
+          {loadError && (
+            <p role="alert" className="max-w-sm text-meta text-danger-text">
+              {loadError}
+            </p>
+          )}
+        </div>
       </div>
     )
   }

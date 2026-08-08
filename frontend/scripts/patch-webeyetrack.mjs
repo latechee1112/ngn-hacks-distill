@@ -75,6 +75,19 @@ const REPLACEMENTS = [
     'e.prototype._processFrames=function(){var e=this,t=function(){return r(e,void 0,void 0,function(){var e;return s(this,function(n){switch(n.label){case 0:return!this.videoElement||this.videoElement.paused||this.videoElement.ended?[2]:(e=(0,a.convertVideoFrameToImageData)(this.videoElement),this.frameCallback?[4,this.frameCallback(e,this.videoElement.currentTime)]:[3,2]);case 1:n.sent(),n.label=2;case 2:return requestAnimationFrame(t),[2]}})})};requestAnimationFrame(t)}',
     'e.prototype._processFrames=function(){var e=this;e.__lastFrameAt=0;var t=function(){return r(e,void 0,void 0,function(){var e,ts;return s(this,function(n){switch(n.label){case 0:return!this.videoElement||this.videoElement.paused||this.videoElement.ended?[2]:(ts=performance.now(),ts-this.__lastFrameAt<80?[3,2]:(this.__lastFrameAt=ts,e=(0,a.convertVideoFrameToImageData)(this.videoElement),this.frameCallback?[4,this.frameCallback(e,this.videoElement.currentTime)]:[3,2]));case 1:n.sent(),n.label=2;case 2:return requestAnimationFrame(t),[2]}})})};requestAnimationFrame(t)}',
   ],
+  // convertVideoFrameToImageData built a brand-new <canvas> on every call and
+  // dropped it immediately. Even throttled to ~12/sec by the patch above,
+  // that is a fresh 640x480 backing store (plus its 2D context, plus the
+  // ImageData) allocated and thrown away over and over - exactly the sawtooth
+  // allocation pattern that shows up as periodic GC hitching rather than a
+  // steady slowdown. The canvas is now created once and reused, resized only
+  // when the video's own dimensions actually change. getImageData still
+  // allocates a fresh buffer per call (unavoidable - it is the return value),
+  // but that is one allocation instead of three.
+  [
+    't.convertVideoFrameToImageData=function(e){var t=document.createElement("canvas");t.width=e.videoWidth,t.height=e.videoHeight;var n=t.getContext("2d");return n.drawImage(e,0,0),n.getImageData(0,0,t.width,t.height)}',
+    't.convertVideoFrameToImageData=function(e){var c=t.__frameCanvas;c||(c=t.__frameCanvas=document.createElement("canvas"),t.__frameCtx=c.getContext("2d",{willReadFrequently:!0})),c.width===e.videoWidth&&c.height===e.videoHeight||(c.width=e.videoWidth,c.height=e.videoHeight);var n=t.__frameCtx;return n.drawImage(e,0,0),n.getImageData(0,0,c.width,c.height)}',
+  ],
 ]
 
 let bundle = readFileSync(bundlePath, 'utf-8')
