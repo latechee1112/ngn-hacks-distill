@@ -2,16 +2,22 @@ import { useEffect, useRef } from 'react'
 import type { GazeResult } from 'webeyetrack'
 import { GAZE_VIDEO_ID, type GazeTracker } from '../calibration/gaze/useGazeTracker'
 
-// The left column of the facetrack debug page: three stacked views of the
-// same instant, so a bad gaze estimate can be attributed to a stage rather
-// than guessed at.
+// The left column of the facetrack debug page: several views of the same
+// instant, so a bad gaze estimate can be attributed to a stage rather than
+// guessed at.
 //
 //   raw       - the camera frame, untouched. Framing, exposure and motion
-//               blur are judged here, and only here: the annotated view
-//               covers the face with the very pixels you would be judging.
+//     |         blur are judged here, and only here: the annotated view
+//     |         covers the face with the very pixels you would be judging.
 //   annotated - the same frame with what the tracker extracted from it: the
 //               face mesh, the eyes, the head pose box and axes, and a bar
 //               out of each eye toward the reported gaze.
+//   eyes      - a crop around both eyes, blown up to fill the panel. At the
+//               scale of the two views above, an eye is a few dozen pixels
+//               across and its landmarks are an indistinct smudge - which is
+//               a problem, because the eye patch is what the gaze model
+//               actually consumes, so lid landmarks sitting slightly wrong
+//               is a failure worth being able to SEE rather than infer.
 //   plane     - the screen, seen head-on: the viewport rectangle, the
 //               calibration targets, a trail of recent samples, and the same
 //               two eye bars arriving at the current gaze point.
@@ -53,6 +59,16 @@ const COLOR = {
 // bundled .task model - these four always exist.
 const EYE_A = { outer: 33, inner: 133 }
 const EYE_B = { outer: 263, inner: 362 }
+// Corners plus upper and lower lids, for measuring the crop the eye view
+// zooms into - corners alone give a region with no height.
+const EYE_REGION = [33, 133, 159, 145, 263, 362, 386, 374]
+// Iris centres. Present only when the model was built with landmark
+// refinement (478 points rather than 468), hence the length check at the
+// call site - worth drawing when they exist, since at this zoom a mis-fitted
+// iris is obvious and it is the single most gaze-relevant landmark there is.
+const IRIS_A = 468
+const IRIS_B = 473
+const REFINED_LANDMARK_COUNT = 478
 // Face width, used as the scale unit for the head box below.
 const CHEEK_L = 234
 const CHEEK_R = 454
@@ -144,6 +160,78 @@ function videoFit(video: HTMLVideoElement | null, size: Size) {
   return { dx: (size.w - dw) / 2, dy: (size.h - dh) / 2, dw, dh }
 }
 
+interface EyeMark {
+  x: number
+  y: number
+  r: number
+}
+
+// The two eyes in whichever panel space `at` maps into, so the annotated and
+// zoomed views describe the same eyes the same way. Radius comes from the
+// eye's own corner-to-corner width, so a ring stays sized to the face as it
+// moves nearer and further.
+//
+// Ordered by position rather than by landmark index, so cyan and yellow stay
+// put instead of swapping if a feed ever arrives already mirrored. Descending
+// because the camera panels draw inside a mirror transform: the eye with the
+// LARGEST image x is the one that ends up on the left of the panel, and
+// cyan-on-the-left is the convention the screen plane panel matches.
+function eyeMarks(at: (i: number) => [number, number]): EyeMark[] {
+  return ([EYE_A, EYE_B] as const)
+    .map((eye) => {
+      const [ox, oy] = at(eye.outer)
+      const [ix, iy] = at(eye.inner)
+      return {
+        x: (ox + ix) / 2,
+        y: (oy + iy) / 2,
+        r: Math.max(4, Math.hypot(ix - ox, iy - oy) * 0.55),
+      }
+    })
+    .sort((a, b) => b.x - a.x)
+}
+
+const EYE_COLORS = [COLOR.eyeA, COLOR.eyeB]
+
+// One bar out of each eye, pointing where this sample says you are looking.
+// Computed in IMAGE space, where the frame arrives unmirrored - looking at
+// the right of the screen turns your eyes toward the left of the raw frame,
+// hence the negated x. The camera panels then draw this inside their mirror
+// transform, which flips it back, so on screen the bar leaves the eye toward
+// the side actually being looked at.
+//
+// Length grows with how far off-centre the gaze is, so looking straight down
+// the camera axis shortens the bars to nothing rather than leaving them
+// pointing somewhere arbitrary - the same foreshortening a real ray toward
+// the viewer would have. `unit` is whatever length means "one face" in the
+// panel being drawn into, so the bars stay proportionate at any zoom.
+function drawGazeBars(
+  ctx: CanvasRenderingContext2D,
+  eyes: EyeMark[],
+  result: GazeResult | null,
+  unit: number,
+) {
+  if (!result || result.gazeState !== 'open') return
+  const gx = -result.normPog[0]
+  const gy = result.normPog[1]
+  const mag = Math.hypot(gx, gy)
+  if (mag <= 0.02) return
+  const ux = gx / mag
+  const uy = gy / mag
+  const len = unit * (0.3 + 2.4 * mag)
+  ctx.lineCap = 'round'
+  ctx.lineWidth = 3
+  eyes.forEach((eye, i) => {
+    ctx.strokeStyle = EYE_COLORS[i]
+    ctx.beginPath()
+    // Started at the ring's edge, not its centre, so the bar reads as leaving
+    // the eye instead of skewering it.
+    ctx.moveTo(eye.x + ux * eye.r, eye.y + uy * eye.r)
+    ctx.lineTo(eye.x + ux * len, eye.y + uy * len)
+    ctx.stroke()
+  })
+  ctx.lineCap = 'butt'
+}
+
 function FaceTrackDebugView({
   resultRef,
   tracker,
@@ -160,18 +248,21 @@ function FaceTrackDebugView({
 }) {
   const rawRef = useRef<HTMLCanvasElement | null>(null)
   const annotatedRef = useRef<HTMLCanvasElement | null>(null)
+  const eyeZoomRef = useRef<HTMLCanvasElement | null>(null)
   const planeRef = useRef<HTMLCanvasElement | null>(null)
   const statusRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const raw = rawRef.current
     const annotated = annotatedRef.current
+    const eyeZoom = eyeZoomRef.current
     const plane = planeRef.current
-    if (!raw || !annotated || !plane) return
+    if (!raw || !annotated || !eyeZoom || !plane) return
     const rawCtx = raw.getContext('2d')
     const annCtx = annotated.getContext('2d')
+    const eyeCtx = eyeZoom.getContext('2d')
     const planeCtx = plane.getContext('2d')
-    if (!rawCtx || !annCtx || !planeCtx) return
+    if (!rawCtx || !annCtx || !eyeCtx || !planeCtx) return
 
     // These canvases are laid out by flexbox, so their pixel size is only
     // known at runtime and changes with the window. The backing store is kept
@@ -193,7 +284,7 @@ function FaceTrackDebugView({
       // so the scale has to be reapplied here rather than set up once.
       canvas.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
-    const canvases = [raw, annotated, plane]
+    const canvases = [raw, annotated, eyeZoom, plane]
     canvases.forEach(measure)
     const observer = new ResizeObserver(() => canvases.forEach(measure))
     canvases.forEach((c) => observer.observe(c))
@@ -213,6 +304,26 @@ function FaceTrackDebugView({
 
     const currentVideo = () => document.getElementById(GAZE_VIDEO_ID) as HTMLVideoElement | null
 
+    // The webcam hands over an UNMIRRORED frame - you as others see you - and
+    // a debug view is something you watch while moving your own head, so
+    // unmirrored means every correction you make goes the wrong way. Flipping
+    // the whole panel (image and annotations together, inside one transform)
+    // rather than just the image is what keeps the two in register: the mesh,
+    // the box and the gaze bars are all computed in image space and come out
+    // mirrored with it, so the bars still leave the eyes toward the side of
+    // the screen being looked at.
+    //
+    // Callers must draw text OUTSIDE this, or it comes out backwards, and
+    // must not `return` from inside the save/restore pair - hence the overlay
+    // bodies below being their own functions.
+    const mirrored = (ctx: CanvasRenderingContext2D, size: Size, draw: () => void) => {
+      ctx.save()
+      ctx.translate(size.w, 0)
+      ctx.scale(-1, 1)
+      draw()
+      ctx.restore()
+    }
+
     const drawRaw = () => {
       const size = sizes.get(raw)
       if (!size) return
@@ -221,7 +332,7 @@ function FaceTrackDebugView({
       const video = currentVideo()
       if (video && video.videoWidth > 0) {
         const { dx, dy, dw, dh } = videoFit(video, size)
-        rawCtx.drawImage(video, dx, dy, dw, dh)
+        mirrored(rawCtx, size, () => rawCtx.drawImage(video, dx, dy, dw, dh))
       } else {
         rawCtx.fillStyle = COLOR.dim
         rawCtx.font = '12px ui-monospace, monospace'
@@ -236,21 +347,31 @@ function FaceTrackDebugView({
       annCtx.fillStyle = '#000'
       annCtx.fillRect(0, 0, size.w, size.h)
       const video = currentVideo()
-      const { dx, dy, dw, dh } = videoFit(video, size)
-      if (video && video.videoWidth > 0) {
-        annCtx.drawImage(video, dx, dy, dw, dh)
-      }
-      label(annCtx, `annotated${showAnnotationsRef.current ? '' : ' (overlay off — A)'}`)
-
+      const fit = videoFit(video, size)
       const marks = result?.facialLandmarks
+      mirrored(annCtx, size, () => {
+        if (video && video.videoWidth > 0) {
+          annCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh)
+        }
+        if (marks && marks.length > 0 && showAnnotationsRef.current) {
+          drawFaceOverlay(marks, result, fit)
+        }
+      })
+
+      label(annCtx, `annotated${showAnnotationsRef.current ? '' : ' (overlay off — A)'}`)
       if (!marks || marks.length === 0) {
         annCtx.fillStyle = COLOR.dim
         annCtx.font = '12px ui-monospace, monospace'
         annCtx.fillText('no face', 12, size.h - 12)
-        return
       }
-      if (!showAnnotationsRef.current) return
+    }
 
+    // Drawn in image space, inside drawAnnotated's mirror transform.
+    const drawFaceOverlay = (
+      marks: NonNullable<GazeResult['facialLandmarks']>,
+      result: GazeResult | null,
+      { dx, dy, dw, dh }: { dx: number; dy: number; dw: number; dh: number },
+    ) => {
       const at = (i: number): [number, number] => [dx + marks[i].x * dw, dy + marks[i].y * dh]
 
       annCtx.fillStyle = COLOR.mesh
@@ -258,25 +379,9 @@ function FaceTrackDebugView({
         annCtx.fillRect(dx + m.x * dw - 0.5, dy + m.y * dh - 0.5, 1.2, 1.2)
       }
 
-      // Eyes. Radius from the eye's own corner-to-corner width so the ring
-      // stays sized to the face as it moves nearer and further. Coloured by
-      // which side of the IMAGE each one lands on rather than by landmark
-      // index, so cyan and yellow stay put instead of swapping if the feed
-      // ever arrives mirrored.
-      const eyes = ([EYE_A, EYE_B] as const)
-        .map((eye) => {
-          const [ox, oy] = at(eye.outer)
-          const [ix, iy] = at(eye.inner)
-          return {
-            x: (ox + ix) / 2,
-            y: (oy + iy) / 2,
-            r: Math.max(5, Math.hypot(ix - ox, iy - oy) * 0.55),
-          }
-        })
-        .sort((a, b) => a.x - b.x)
-      const eyeColors = [COLOR.eyeA, COLOR.eyeB]
+      const eyes = eyeMarks(at)
       eyes.forEach((eye, i) => {
-        annCtx.strokeStyle = eyeColors[i]
+        annCtx.strokeStyle = EYE_COLORS[i]
         annCtx.lineWidth = 1.5
         annCtx.beginPath()
         annCtx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2)
@@ -289,39 +394,7 @@ function FaceTrackDebugView({
       const cx = (lx + rx) / 2
       const cy = (ly + ry) / 2
 
-      // Gaze bars: one out of each eye, pointing where this sample says you
-      // are looking. The camera feed is NOT mirrored (nothing flips it, here
-      // or on the page's <video>), so it shows you as others see you -
-      // looking at the right of the screen turns your eyes toward the LEFT of
-      // this image, hence the negated x. If a feed ever does arrive mirrored,
-      // this single sign is the fix.
-      //
-      // Length grows with how far off-centre the gaze is, so looking straight
-      // down the camera axis shortens the bars to nothing rather than leaving
-      // them pointing somewhere arbitrary - the same foreshortening a real
-      // ray toward the viewer would have.
-      if (result && result.gazeState === 'open') {
-        const gx = -result.normPog[0]
-        const gy = result.normPog[1]
-        const mag = Math.hypot(gx, gy)
-        if (mag > 0.02) {
-          const ux = gx / mag
-          const uy = gy / mag
-          const len = faceWidth * (0.3 + 2.4 * mag)
-          annCtx.lineCap = 'round'
-          annCtx.lineWidth = 3
-          eyes.forEach((eye, i) => {
-            annCtx.strokeStyle = eyeColors[i]
-            annCtx.beginPath()
-            // Started at the ring's edge, not its centre, so the bar reads as
-            // leaving the eye instead of skewering it.
-            annCtx.moveTo(eye.x + ux * eye.r, eye.y + uy * eye.r)
-            annCtx.lineTo(eye.x + ux * len, eye.y + uy * len)
-            annCtx.stroke()
-          })
-          annCtx.lineCap = 'butt'
-        }
-      }
+      drawGazeBars(annCtx, eyes, result, faceWidth)
 
       const rot = result ? rotationFrom(result.faceRt) : null
       if (!rot) return
@@ -363,6 +436,114 @@ function FaceTrackDebugView({
         annCtx.lineTo(nx + faceWidth * c[0], ny - faceWidth * c[1])
         annCtx.stroke()
       }
+    }
+
+    const drawEyes = (result: GazeResult | null) => {
+      const size = sizes.get(eyeZoom)
+      if (!size) return
+      eyeCtx.fillStyle = '#000'
+      eyeCtx.fillRect(0, 0, size.w, size.h)
+      const video = currentVideo()
+      const marks = result?.facialLandmarks
+      if (!video || video.videoWidth === 0 || !marks || marks.length === 0) {
+        eyeCtx.fillStyle = COLOR.dim
+        eyeCtx.font = '12px ui-monospace, monospace'
+        eyeCtx.fillText('no face', 12, size.h / 2)
+        label(eyeCtx, 'eyes')
+        return
+      }
+
+      // Crop, in video pixels, around every eye landmark, padded outward so
+      // the brow and cheek give the eye somewhere to sit - a crop clamped to
+      // the lids alone reads as an anatomy diagram rather than a face.
+      const vw = video.videoWidth
+      const vh = video.videoHeight
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const i of EYE_REGION) {
+        const m = marks[i]
+        if (!m) continue
+        minX = Math.min(minX, m.x * vw)
+        maxX = Math.max(maxX, m.x * vw)
+        minY = Math.min(minY, m.y * vh)
+        maxY = Math.max(maxY, m.y * vh)
+      }
+      if (!Number.isFinite(minX) || maxX <= minX) return
+      const pad = (maxX - minX) * 0.18
+      let sx = minX - pad
+      let sy = minY - pad
+      let sw = maxX - minX + pad * 2
+      let sh = maxY - minY + pad * 2
+
+      // Grown (never cropped) to the panel's aspect ratio, so the zoom fills
+      // the panel without squashing the face.
+      const panelAspect = size.w / size.h
+      if (sw / sh < panelAspect) {
+        const grown = sh * panelAspect
+        sx -= (grown - sw) / 2
+        sw = grown
+      } else {
+        const grown = sw / panelAspect
+        sy -= (grown - sh) / 2
+        sh = grown
+      }
+      const zoom = size.w / sw
+      mirrored(eyeCtx, size, () => {
+        // Source rectangles reaching outside the frame are clipped by
+        // drawImage, and it scales the destination to match, so the mapping
+        // below stays correct without clamping anything here.
+        eyeCtx.drawImage(video, sx, sy, sw, sh, 0, 0, size.w, size.h)
+        if (showAnnotationsRef.current) drawEyeOverlay(marks, result, { sx, sy, zoom, vw, vh }, size)
+      })
+      label(eyeCtx, `eyes · ${zoom.toFixed(1)}x${showAnnotationsRef.current ? '' : ' (overlay off — A)'}`)
+    }
+
+    // Drawn in crop space, inside drawEyes' mirror transform.
+    const drawEyeOverlay = (
+      marks: NonNullable<GazeResult['facialLandmarks']>,
+      result: GazeResult | null,
+      crop: { sx: number; sy: number; zoom: number; vw: number; vh: number },
+      size: Size,
+    ) => {
+      const { sx, sy, zoom, vw, vh } = crop
+      const at = (i: number): [number, number] => [(marks[i].x * vw - sx) * zoom, (marks[i].y * vh - sy) * zoom]
+
+      // Only the landmarks actually inside the crop, so the whole face's
+      // worth of dots does not pile up along the edges.
+      eyeCtx.fillStyle = COLOR.mesh
+      for (const m of marks) {
+        const px = (m.x * vw - sx) * zoom
+        const py = (m.y * vh - sy) * zoom
+        if (px < 0 || py < 0 || px > size.w || py > size.h) continue
+        eyeCtx.fillRect(px - 1, py - 1, 2, 2)
+      }
+
+      const eyes = eyeMarks(at)
+      eyes.forEach((eye, i) => {
+        eyeCtx.strokeStyle = EYE_COLORS[i]
+        eyeCtx.lineWidth = 2
+        eyeCtx.beginPath()
+        eyeCtx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2)
+        eyeCtx.stroke()
+      })
+
+      // Iris centres, when the model provides them. Ordered by image side to
+      // match the rings above rather than trusting the index order.
+      if (marks.length >= REFINED_LANDMARK_COUNT) {
+        const irises = [at(IRIS_A), at(IRIS_B)].sort((a, b) => a[0] - b[0])
+        irises.forEach(([px, py], i) => {
+          eyeCtx.fillStyle = EYE_COLORS[i]
+          eyeCtx.beginPath()
+          eyeCtx.arc(px, py, 3, 0, Math.PI * 2)
+          eyeCtx.fill()
+        })
+      }
+
+      // One eye separation is the natural "face unit" at this zoom - the
+      // face's cheeks are usually outside the crop entirely.
+      drawGazeBars(eyeCtx, eyes, result, Math.hypot(eyes[1].x - eyes[0].x, eyes[1].y - eyes[0].y))
     }
 
     const drawPlane = (result: GazeResult | null) => {
@@ -419,15 +600,16 @@ function FaceTrackDebugView({
       let eyePoints: [number, number][] = []
       const origin = result?.faceOrigin3D
       if (origin && origin.length >= 2 && Number.isFinite(origin[0])) {
-        const clamp = (v: number) => Math.max(-0.9, Math.min(0.9, v))
-        const hy = clamp(origin[1] / HEAD_RANGE_CM)
-        const head = toPx(clamp(origin[0] / HEAD_RANGE_CM), hy)
-        // Camera +x is toward the image right, matching the annotated view
-        // above, so the eye drawn left of centre is the cyan one there too.
-        eyePoints = [
-          toPx(clamp((origin[0] - IPD_CM / 2) / HEAD_RANGE_CM), hy),
-          toPx(clamp((origin[0] + IPD_CM / 2) / HEAD_RANGE_CM), hy),
-        ]
+        // This panel is the screen as YOU face it, so x runs the opposite way
+        // to the camera's: the camera looks back at you, so its +x (toward
+        // the right of the raw frame) is your left. Negating here is the same
+        // flip the camera panels get from their mirror transform, which is
+        // what makes "head drifted left" mean the same thing in both - and
+        // puts the cyan eye on the left in both.
+        const ex = (cm: number) => Math.max(-0.9, Math.min(0.9, -cm / HEAD_RANGE_CM))
+        const hy = Math.max(-0.9, Math.min(0.9, origin[1] / HEAD_RANGE_CM))
+        const head = toPx(ex(origin[0]), hy)
+        eyePoints = [toPx(ex(origin[0] + IPD_CM / 2), hy), toPx(ex(origin[0] - IPD_CM / 2), hy)]
         planeCtx.strokeStyle = COLOR.head
         planeCtx.lineWidth = 1.5
         planeCtx.beginPath()
@@ -487,6 +669,7 @@ function FaceTrackDebugView({
 
       drawRaw()
       drawAnnotated(result)
+      drawEyes(result)
       drawPlane(result)
 
       const status = statusRef.current
@@ -521,8 +704,14 @@ function FaceTrackDebugView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-black">
-      <canvas ref={rawRef} className="min-h-0 w-full flex-1" />
-      <canvas ref={annotatedRef} className="min-h-0 w-full flex-1 border-t border-white/10" />
+      {/* Raw and annotated share the top row so the two can be compared
+          without looking away - the whole reason for keeping an unannotated
+          copy is that it sits beside the annotated one, not under it. */}
+      <div className="flex min-h-0 flex-1">
+        <canvas ref={rawRef} className="h-full min-w-0 flex-1" />
+        <canvas ref={annotatedRef} className="h-full min-w-0 flex-1 border-l border-white/10" />
+      </div>
+      <canvas ref={eyeZoomRef} className="min-h-0 w-full flex-1 border-t border-white/10" />
       <canvas ref={planeRef} className="min-h-0 w-full flex-1 border-t border-white/10" />
       <div
         ref={statusRef}
