@@ -124,6 +124,15 @@ export function useGazeTracker(onSample: (result: GazeResult, capturedAt: number
 
   const start = useCallback(
     async (videoElementId: string) => {
+      // Idempotent. The debug page starts the camera itself and can then
+      // mount DotCalibration over the top of it, which starts the tracker on
+      // mount unconditionally - a second WebEyeTrack and a second
+      // WebcamClient on the same <video> would leave two inference loops
+      // fighting over one element.
+      if (activeRef.current) {
+        setReady(true)
+        return
+      }
       const tracker = new WebEyeTrack(MAX_CALIBRATION_POINTS)
       await tracker.initialize()
       trackerRef.current = tracker

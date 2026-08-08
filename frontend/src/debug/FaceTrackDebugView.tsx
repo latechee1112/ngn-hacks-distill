@@ -1,28 +1,23 @@
 import { useEffect, useRef } from 'react'
 import type { GazeResult } from 'webeyetrack'
-import { GAZE_VIDEO_ID, type GazeTracker } from './useGazeTracker'
+import { GAZE_VIDEO_ID, type GazeTracker } from '../calibration/gaze/useGazeTracker'
 
-// Development instrumentation: what the tracker is ACTUALLY seeing, drawn
-// next to what it concluded. Two stacked canvases in the bottom-left corner:
+// The left column of the facetrack debug page: three stacked views of the
+// same instant, so a bad gaze estimate can be attributed to a stage rather
+// than guessed at.
 //
-//   1. the live camera frame with the face mesh, the estimated head pose (a
-//      wireframe box + axes from faceRt), and the two eyes ringed;
-//   2. a plan view of the screen plane - the viewport rectangle, the nine
-//      calibration targets, a trail of recent gaze points, and where the
-//      current sample landed relative to the head.
+//   raw       - the camera frame, untouched. Framing, exposure and motion
+//               blur are judged here, and only here: the annotated view
+//               covers the face with the very pixels you would be judging.
+//   annotated - the same frame with what the tracker extracted from it: the
+//               face mesh, the eyes, the head pose box and axes, and a bar
+//               out of each eye toward the reported gaze.
+//   plane     - the screen, seen head-on: the viewport rectangle, the
+//               calibration targets, a trail of recent samples, and the same
+//               two eye bars arriving at the current gaze point.
 //
-// The second panel is the one that earns its keep: a gaze blob sitting in the
-// wrong place looks identical whether the face is being lost, the head has
-// drifted out of the calibrated pose, or the affine fit is simply bad - and
-// those three have completely different fixes. Panel 1 rules out the first,
-// the trail-vs-targets spread in panel 2 separates the other two.
-//
-// Everything here draws from refs inside one requestAnimationFrame loop and
-// never triggers a React render.
-
-const PANEL_W = 320
-const CAM_H = 180
-const PLANE_H = 176
+// Everything draws from refs inside one requestAnimationFrame loop; nothing
+// here triggers a React render.
 
 // How many recent gaze samples the plane view keeps as a trail. ~10 samples
 // per second (useGazeTracker's MIN_FRAME_INTERVAL_MS), so this is the last
@@ -49,9 +44,8 @@ const COLOR = {
   screen: '#facc15',
   diagonal: 'rgba(250, 204, 21, 0.35)',
   target: '#fb923c',
-  trail: 'rgba(255, 255, 255, 0.5)',
   head: '#f472b6',
-  dim: 'rgba(255, 255, 255, 0.35)',
+  dim: 'rgba(255, 255, 255, 0.4)',
 }
 
 // MediaPipe face-mesh landmark indices. Eye corners rather than the iris
@@ -132,52 +126,77 @@ const BOX_EDGES: [number, number][] = [
   [3, 7],
 ]
 
-function GazeDebugPanel({
+interface Size {
+  w: number
+  h: number
+}
+
+// Where the (letterboxed, never stretched) video frame lands inside a canvas.
+// The landmarks are normalized to the video's own aspect ratio, so any fit
+// applied to the image has to be applied to them identically or the mesh
+// slides off the face.
+function videoFit(video: HTMLVideoElement | null, size: Size) {
+  const vw = video?.videoWidth || 4
+  const vh = video?.videoHeight || 3
+  const scale = Math.min(size.w / vw, size.h / vh)
+  const dw = vw * scale
+  const dh = vh * scale
+  return { dx: (size.w - dw) / 2, dy: (size.h - dh) / 2, dw, dh }
+}
+
+function FaceTrackDebugView({
   resultRef,
   tracker,
+  showAnnotationsRef,
 }: {
-  // Written by App's gaze callback on every sample, corrected normPog
-  // included - i.e. exactly the sample the blob is driven from.
+  // Written by the page's gaze callback on every sample, corrected normPog
+  // included - i.e. exactly the sample the rest of the extension acts on.
   resultRef: React.RefObject<GazeResult | null>
   tracker: GazeTracker
+  // A ref rather than a prop value: flipping it must not re-render, because a
+  // re-render restarts the draw effect below and takes the gaze trail - the
+  // one thing you were watching - with it.
+  showAnnotationsRef: React.RefObject<boolean>
 }) {
-  const camRef = useRef<HTMLCanvasElement | null>(null)
+  const rawRef = useRef<HTMLCanvasElement | null>(null)
+  const annotatedRef = useRef<HTMLCanvasElement | null>(null)
   const planeRef = useRef<HTMLCanvasElement | null>(null)
-  const readoutRef = useRef<HTMLPreElement | null>(null)
-  // A ref, not state, and toggled by a listener owned here rather than by a
-  // prop from App: a re-render would restart the draw effect below and take
-  // the gaze trail with it, so the one thing you were watching would vanish
-  // every time you pressed the key.
-  const showFaceRef = useRef(true)
+  const statusRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'a' || event.key === 'A') showFaceRef.current = !showFaceRef.current
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  useEffect(() => {
-    const cam = camRef.current
+    const raw = rawRef.current
+    const annotated = annotatedRef.current
     const plane = planeRef.current
-    if (!cam || !plane) return
-    const camCtx = cam.getContext('2d')
+    if (!raw || !annotated || !plane) return
+    const rawCtx = raw.getContext('2d')
+    const annCtx = annotated.getContext('2d')
     const planeCtx = plane.getContext('2d')
-    if (!camCtx || !planeCtx) return
+    if (!rawCtx || !annCtx || !planeCtx) return
 
-    // Backing store at device resolution, drawing in CSS pixels. A 1px mesh
-    // dot on a HiDPI screen is otherwise a blurry 2px smear, which is the
-    // difference between seeing the landmark scatter and not.
+    // These canvases are laid out by flexbox, so their pixel size is only
+    // known at runtime and changes with the window. The backing store is kept
+    // at device resolution and the drawing code works in CSS pixels - a 1px
+    // mesh dot on a HiDPI screen is otherwise a blurry 2px smear, which is
+    // the difference between seeing the landmark scatter and not.
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    for (const [canvas, height] of [
-      [cam, CAM_H],
-      [plane, PLANE_H],
-    ] as const) {
-      canvas.width = PANEL_W * dpr
-      canvas.height = height * dpr
-      canvas.getContext('2d')?.scale(dpr, dpr)
+    const sizes = new Map<HTMLCanvasElement, Size>()
+    const measure = (canvas: HTMLCanvasElement) => {
+      const rect = canvas.getBoundingClientRect()
+      const w = Math.max(1, Math.round(rect.width))
+      const h = Math.max(1, Math.round(rect.height))
+      const prev = sizes.get(canvas)
+      if (prev && prev.w === w && prev.h === h) return
+      sizes.set(canvas, { w, h })
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      // Resizing the backing store resets the context, transform included,
+      // so the scale has to be reapplied here rather than set up once.
+      canvas.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
+    const canvases = [raw, annotated, plane]
+    canvases.forEach(measure)
+    const observer = new ResizeObserver(() => canvases.forEach(measure))
+    canvases.forEach((c) => observer.observe(c))
 
     const trail: [number, number][] = []
     let lastSeen: GazeResult | null = null
@@ -186,44 +205,57 @@ function GazeDebugPanel({
     let fps = 0
     let frameId = 0
 
-    const drawCamera = (result: GazeResult | null) => {
-      camCtx.fillStyle = '#000'
-      camCtx.fillRect(0, 0, PANEL_W, CAM_H)
+    const label = (ctx: CanvasRenderingContext2D, text: string) => {
+      ctx.fillStyle = COLOR.dim
+      ctx.font = '11px ui-monospace, monospace'
+      ctx.fillText(text, 8, 16)
+    }
 
-      // Letterbox the frame rather than stretching it: the landmarks are
-      // normalized to the video's own aspect, so any distortion applied to
-      // the image has to be applied to them identically or the mesh slides
-      // off the face.
-      const video = document.getElementById(GAZE_VIDEO_ID) as HTMLVideoElement | null
-      const vw = video?.videoWidth || 4
-      const vh = video?.videoHeight || 3
-      const scale = Math.min(PANEL_W / vw, CAM_H / vh)
-      const dw = vw * scale
-      const dh = vh * scale
-      const dx = (PANEL_W - dw) / 2
-      const dy = (CAM_H - dh) / 2
+    const currentVideo = () => document.getElementById(GAZE_VIDEO_ID) as HTMLVideoElement | null
+
+    const drawRaw = () => {
+      const size = sizes.get(raw)
+      if (!size) return
+      rawCtx.fillStyle = '#000'
+      rawCtx.fillRect(0, 0, size.w, size.h)
+      const video = currentVideo()
       if (video && video.videoWidth > 0) {
-        camCtx.drawImage(video, dx, dy, dw, dh)
+        const { dx, dy, dw, dh } = videoFit(video, size)
+        rawCtx.drawImage(video, dx, dy, dw, dh)
+      } else {
+        rawCtx.fillStyle = COLOR.dim
+        rawCtx.font = '12px ui-monospace, monospace'
+        rawCtx.fillText('no camera frame', 12, size.h / 2)
       }
+      label(rawCtx, 'raw')
+    }
+
+    const drawAnnotated = (result: GazeResult | null) => {
+      const size = sizes.get(annotated)
+      if (!size) return
+      annCtx.fillStyle = '#000'
+      annCtx.fillRect(0, 0, size.w, size.h)
+      const video = currentVideo()
+      const { dx, dy, dw, dh } = videoFit(video, size)
+      if (video && video.videoWidth > 0) {
+        annCtx.drawImage(video, dx, dy, dw, dh)
+      }
+      label(annCtx, `annotated${showAnnotationsRef.current ? '' : ' (overlay off — A)'}`)
 
       const marks = result?.facialLandmarks
       if (!marks || marks.length === 0) {
-        camCtx.fillStyle = COLOR.dim
-        camCtx.font = '11px ui-monospace, monospace'
-        camCtx.fillText('no face', 8, CAM_H - 8)
+        annCtx.fillStyle = COLOR.dim
+        annCtx.font = '12px ui-monospace, monospace'
+        annCtx.fillText('no face', 12, size.h - 12)
         return
       }
-      // Everything from here down is annotation. Off, this is a plain camera
-      // preview - which is what you want when checking framing, lighting or
-      // whether you are drifting out of shot, since the mesh covers exactly
-      // the part of the image you would be judging.
-      if (!showFaceRef.current) return
+      if (!showAnnotationsRef.current) return
 
       const at = (i: number): [number, number] => [dx + marks[i].x * dw, dy + marks[i].y * dh]
 
-      camCtx.fillStyle = COLOR.mesh
+      annCtx.fillStyle = COLOR.mesh
       for (const m of marks) {
-        camCtx.fillRect(dx + m.x * dw - 0.5, dy + m.y * dh - 0.5, 1.2, 1.2)
+        annCtx.fillRect(dx + m.x * dw - 0.5, dy + m.y * dh - 0.5, 1.2, 1.2)
       }
 
       // Eyes. Radius from the eye's own corner-to-corner width so the ring
@@ -244,11 +276,11 @@ function GazeDebugPanel({
         .sort((a, b) => a.x - b.x)
       const eyeColors = [COLOR.eyeA, COLOR.eyeB]
       eyes.forEach((eye, i) => {
-        camCtx.strokeStyle = eyeColors[i]
-        camCtx.lineWidth = 1.5
-        camCtx.beginPath()
-        camCtx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2)
-        camCtx.stroke()
+        annCtx.strokeStyle = eyeColors[i]
+        annCtx.lineWidth = 1.5
+        annCtx.beginPath()
+        annCtx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2)
+        annCtx.stroke()
       })
 
       const [lx, ly] = at(CHEEK_L)
@@ -257,12 +289,12 @@ function GazeDebugPanel({
       const cx = (lx + rx) / 2
       const cy = (ly + ry) / 2
 
-      // Gaze bars: one out of each eye, pointing where that sample says you
+      // Gaze bars: one out of each eye, pointing where this sample says you
       // are looking. The camera feed is NOT mirrored (nothing flips it, here
-      // or in App's <video>), so it shows you as others see you - looking at
-      // the right of the screen turns your eyes toward the LEFT of this
-      // image, hence the negated x. If a feed ever does arrive mirrored, this
-      // single sign is the fix.
+      // or on the page's <video>), so it shows you as others see you -
+      // looking at the right of the screen turns your eyes toward the LEFT of
+      // this image, hence the negated x. If a feed ever does arrive mirrored,
+      // this single sign is the fix.
       //
       // Length grows with how far off-centre the gaze is, so looking straight
       // down the camera axis shortens the bars to nothing rather than leaving
@@ -276,18 +308,18 @@ function GazeDebugPanel({
           const ux = gx / mag
           const uy = gy / mag
           const len = faceWidth * (0.3 + 2.4 * mag)
-          camCtx.lineCap = 'round'
-          camCtx.lineWidth = 3
+          annCtx.lineCap = 'round'
+          annCtx.lineWidth = 3
           eyes.forEach((eye, i) => {
-            camCtx.strokeStyle = eyeColors[i]
-            camCtx.beginPath()
+            annCtx.strokeStyle = eyeColors[i]
+            annCtx.beginPath()
             // Started at the ring's edge, not its centre, so the bar reads as
             // leaving the eye instead of skewering it.
-            camCtx.moveTo(eye.x + ux * eye.r, eye.y + uy * eye.r)
-            camCtx.lineTo(eye.x + ux * len, eye.y + uy * len)
-            camCtx.stroke()
+            annCtx.moveTo(eye.x + ux * eye.r, eye.y + uy * eye.r)
+            annCtx.lineTo(eye.x + ux * len, eye.y + uy * len)
+            annCtx.stroke()
           })
-          camCtx.lineCap = 'butt'
+          annCtx.lineCap = 'butt'
         }
       }
 
@@ -303,16 +335,16 @@ function GazeDebugPanel({
         return [cx + faceWidth * persp * c[0], cy - faceWidth * persp * c[1]]
       }
 
-      camCtx.strokeStyle = COLOR.box
-      camCtx.lineWidth = 1.25
-      camCtx.beginPath()
+      annCtx.strokeStyle = COLOR.box
+      annCtx.lineWidth = 1.25
+      annCtx.beginPath()
       for (const [a, b] of BOX_EDGES) {
         const [ax, ay] = project(BOX_CORNERS[a])
         const [bx, by] = project(BOX_CORNERS[b])
-        camCtx.moveTo(ax, ay)
-        camCtx.lineTo(bx, by)
+        annCtx.moveTo(ax, ay)
+        annCtx.lineTo(bx, by)
       }
-      camCtx.stroke()
+      annCtx.stroke()
 
       // Head axes, drawn from the nose so they read as attached to the face
       // rather than floating at the box centre.
@@ -324,26 +356,28 @@ function GazeDebugPanel({
         [[0, 0, axisLen], COLOR.axisZ],
       ] as [Vec3, string][]) {
         const c = rotate(rot, axis)
-        camCtx.strokeStyle = color
-        camCtx.lineWidth = 2
-        camCtx.beginPath()
-        camCtx.moveTo(nx, ny)
-        camCtx.lineTo(nx + faceWidth * c[0], ny - faceWidth * c[1])
-        camCtx.stroke()
+        annCtx.strokeStyle = color
+        annCtx.lineWidth = 2
+        annCtx.beginPath()
+        annCtx.moveTo(nx, ny)
+        annCtx.lineTo(nx + faceWidth * c[0], ny - faceWidth * c[1])
+        annCtx.stroke()
       }
     }
 
     const drawPlane = (result: GazeResult | null) => {
+      const size = sizes.get(plane)
+      if (!size) return
       planeCtx.fillStyle = '#000'
-      planeCtx.fillRect(0, 0, PANEL_W, PLANE_H)
+      planeCtx.fillRect(0, 0, size.w, size.h)
+      label(planeCtx, 'screen plane')
 
       // The viewport rectangle is inset, so samples that land off-screen
       // (the interesting failure) are still visible instead of clipped away.
-      const inset = 30
-      const rx = inset
-      const ry = inset * 0.55
-      const rw = PANEL_W - inset * 2
-      const rh = PLANE_H - inset * 1.1
+      const rx = size.w * 0.12
+      const ry = size.h * 0.16
+      const rw = size.w - rx * 2
+      const rh = size.h - ry * 2
       const toPx = (n: number, m: number): [number, number] => [rx + (n + 0.5) * rw, ry + (m + 0.5) * rh]
 
       planeCtx.strokeStyle = COLOR.diagonal
@@ -380,20 +414,15 @@ function GazeDebugPanel({
         planeCtx.fillRect(px - 1, py - 1, 2, 2)
       })
 
-      // Head position from faceOrigin3D (centimetres from the camera).
-      // Divided by a plausible half-range rather than anything measured -
-      // this marker is for watching DRIFT, not for absolute placement.
+      // Head position from faceOrigin3D (centimetres from the camera), and
+      // the two eyes either side of it. See HEAD_RANGE_CM.
       let eyePoints: [number, number][] = []
       const origin = result?.faceOrigin3D
       if (origin && origin.length >= 2 && Number.isFinite(origin[0])) {
         const clamp = (v: number) => Math.max(-0.9, Math.min(0.9, v))
-        const hx = clamp(origin[0] / HEAD_RANGE_CM)
         const hy = clamp(origin[1] / HEAD_RANGE_CM)
-        const head = toPx(hx, hy)
-        // The two eyes, half an interpupillary distance either side of the
-        // head origin - in the same centimetre scale, so the separation here
-        // is to the same rough scale as everything else on this panel.
-        // Camera +x is toward the image right, matching the camera panel
+        const head = toPx(clamp(origin[0] / HEAD_RANGE_CM), hy)
+        // Camera +x is toward the image right, matching the annotated view
         // above, so the eye drawn left of centre is the cyan one there too.
         eyePoints = [
           toPx(clamp((origin[0] - IPD_CM / 2) / HEAD_RANGE_CM), hy),
@@ -414,7 +443,7 @@ function GazeDebugPanel({
 
       if (result && result.gazeState === 'open') {
         const [gx, gy] = toPx(result.normPog[0], result.normPog[1])
-        // The same two bars as the camera panel, seen from the other side:
+        // The same two bars as the annotated view, seen from the other side:
         // there they leave the eyes, here they arrive at the point on the
         // screen they were aimed at.
         const eyeColors = [COLOR.eyeA, COLOR.eyeB]
@@ -456,26 +485,27 @@ function GazeDebugPanel({
         fpsWindowStart = now
       }
 
-      drawCamera(result)
+      drawRaw()
+      drawAnnotated(result)
       drawPlane(result)
 
-      const readout = readoutRef.current
-      if (readout) {
+      const status = statusRef.current
+      if (status) {
         const pog = result?.normPog
-        readout.textContent = [
-          `state  ${result ? result.gazeState : '—'}`,
-          `rate   ${fps.toFixed(1)}/s`,
-          `pog    ${pog ? `${pog[0].toFixed(3)}, ${pog[1].toFixed(3)}` : '—'}`,
-          `calib  ${tracker.getCalibrationPairs().length} pts${tracker.isCorrectionFromFile() ? ' (file)' : ''}`,
-          `face   ${showFaceRef.current ? 'on' : 'off'}`,
-        ].join('\n')
+        status.textContent = [
+          `state ${result ? result.gazeState : '—'}`,
+          `rate ${fps.toFixed(1)}/s`,
+          `pog ${pog ? `${pog[0].toFixed(3)}, ${pog[1].toFixed(3)}` : '—'}`,
+          `calib ${tracker.getCalibrationPairs().length} pts${tracker.isCorrectionFromFile() ? ' (file)' : ''}`,
+          `overlay ${showAnnotationsRef.current ? 'on' : 'off'}`,
+        ].join('   ')
       }
     }
 
     // Drawn once synchronously before the loop starts. requestAnimationFrame
     // does not fire while the tab is hidden or otherwise not compositing, so
-    // without this the panel can sit completely blank - indistinguishable
-    // from "the tracker died", which is the exact confusion it exists to
+    // without this the panels can sit completely blank - indistinguishable
+    // from "the tracker died", which is the exact confusion they exist to
     // prevent.
     renderFrame()
     const animate = () => {
@@ -483,29 +513,23 @@ function GazeDebugPanel({
       renderFrame()
     }
     frameId = window.requestAnimationFrame(animate)
-    return () => window.cancelAnimationFrame(frameId)
-  }, [resultRef, tracker])
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      observer.disconnect()
+    }
+  }, [resultRef, tracker, showAnnotationsRef])
 
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed bottom-4 left-4 z-40 w-[320px] overflow-hidden rounded-lg border border-white/15 bg-black/80 shadow-lg"
-    >
-      <canvas ref={camRef} style={{ width: PANEL_W, height: CAM_H, display: 'block' }} />
-      <canvas
-        ref={planeRef}
-        style={{ width: PANEL_W, height: PLANE_H, display: 'block' }}
-        className="border-t border-white/10"
+    <div className="flex h-full min-h-0 flex-col bg-black">
+      <canvas ref={rawRef} className="min-h-0 w-full flex-1" />
+      <canvas ref={annotatedRef} className="min-h-0 w-full flex-1 border-t border-white/10" />
+      <canvas ref={planeRef} className="min-h-0 w-full flex-1 border-t border-white/10" />
+      <div
+        ref={statusRef}
+        className="shrink-0 border-t border-white/10 px-3 py-2 font-mono text-[11px] text-white/60"
       />
-      <pre
-        ref={readoutRef}
-        className="m-0 border-t border-white/10 px-3 py-2 font-mono text-[10px] leading-[1.5] text-white/70"
-      />
-      <p className="m-0 px-3 pb-2 font-mono text-[10px] text-white/40">
-        A = face overlay · F8 = hide debug view
-      </p>
     </div>
   )
 }
 
-export default GazeDebugPanel
+export default FaceTrackDebugView

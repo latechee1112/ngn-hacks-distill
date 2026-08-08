@@ -17,7 +17,6 @@ import {
   residualError,
 } from './gaze/gazeCalibrationFile'
 import DotCalibration from './gaze/DotCalibration'
-import GazeDebugPanel from './gaze/GazeDebugPanel'
 import { currentTargetRect, isOnTarget, toPagePoint, type PageGazePoint } from './gaze/hitTest'
 import { GAZE_VIDEO_ID, useGazeTracker } from './gaze/useGazeTracker'
 import TrialTask from './TrialTask'
@@ -30,6 +29,16 @@ import { PRACTICE_TRIAL, TRIALS } from './trials'
 // call the backend directly instead of proxying through the background
 // worker.
 const BACKEND_URL = 'http://127.0.0.1:8000'
+
+// Opened in its own tab rather than rendered here: it runs a second camera
+// stream and its own tracker, and the whole point of moving it out of this
+// page was that it must not share a viewport with the trials it would
+// otherwise be measured alongside. chrome.runtime is absent under `vite dev`,
+// where the page is served from localhost instead of chrome-extension://.
+function openFaceTrackDebug() {
+  const url = chrome?.runtime?.getURL ? chrome.runtime.getURL('debug.html') : '/debug.html'
+  window.open(url, '_blank', 'noopener')
+}
 
 async function markDismissed() {
   try {
@@ -204,35 +213,12 @@ function App() {
   const STRETCH_K = 0.48
   const SQUASH_K = 0.16
 
-  // The whole sample, not just the derived page point - GazeDebugPanel draws
-  // the face mesh, head pose and eye state from it. Stored unconditionally
-  // (including gazeState:'closed' samples toPagePoint drops) precisely so the
-  // panel can show a blink or a lost face as such, rather than as a freeze.
-  const latestResultRef = useRef<GazeResult | null>(null)
-  // Instrumentation only - see GazeDebugPanel. On by default while the camera
-  // is running, since anyone with this build open is developing against it;
-  // F8 hides it (it is a large moving object in the corner, which is not what
-  // you want on screen while checking how the trials themselves feel).
-  const [showDebug, setShowDebug] = useState(true)
-
   const handleGazeSample = useCallback((result: GazeResult, capturedAt: number) => {
-    latestResultRef.current = result
     const point = toPagePoint(result, capturedAt)
     if (point) {
       gazeSamplesRef.current.push(point)
       latestGazePointRef.current = point
     }
-  }, [])
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'F8') {
-        event.preventDefault()
-        setShowDebug((v) => !v)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   // The blob runs across practice AND the real trials - practice exists so
@@ -243,13 +229,6 @@ function App() {
   // loop: the smoothing/velocity state below stays continuous across the
   // boundary instead of snapping the blob back to a cold start.
   const gazeActive = step === 'practice' || step === 'trials'
-
-  // Steps where the camera is actually streaming: the dot phase starts it,
-  // submit() stops it. gazeCalibration is included even though
-  // gazeEnabledRef is still false there (it flips only once the dots finish),
-  // because that is exactly the phase whose data the debug panel is most
-  // useful for watching.
-  const cameraRunning = step === 'gazeCalibration' || (gazeActive && gazeEnabledRef.current)
 
   useEffect(() => {
     if (!gazeActive || !gazeEnabledRef.current) return
@@ -560,6 +539,14 @@ function App() {
             <Icon name="upload" />
             Dev: load a saved profile and skip everything
           </button>
+          <button
+            type="button"
+            onClick={openFaceTrackDebug}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
+          >
+            <Icon name="eye" />
+            Debug: open facetrack debug
+          </button>
           {importError && (
             <p role="alert" className="max-w-sm text-meta text-danger-text">
               {importError}
@@ -743,15 +730,9 @@ function App() {
         muted
         playsInline
         className={
-          // The debug panel below draws its own (annotated) copy of this same
-          // feed, so the plain top-right preview would just be a second,
-          // worse view of it - hidden while the panel is up.
-          step === 'gazeCalibration' && !(showDebug && cameraRunning)
-            ? 'fixed top-4 right-4 h-24 w-32 rounded-md object-cover'
-            : 'sr-only'
+          step === 'gazeCalibration' ? 'fixed top-4 right-4 h-24 w-32 rounded-md object-cover' : 'sr-only'
         }
       />
-      {showDebug && cameraRunning && <GazeDebugPanel resultRef={latestResultRef} tracker={tracker} />}
       {/* Out here with the <video> so the element the welcome screen's load
           button clicks through to always exists, independent of which step is
           rendered. `hidden` rather than sr-only: this is never something to

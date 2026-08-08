@@ -21,6 +21,9 @@ export default defineConfig({
       input: {
         sidepanel: resolve(import.meta.dirname, 'sidepanel.html'),
         calibration: resolve(import.meta.dirname, 'calibration.html'),
+        // Development tooling, not part of any user flow - nothing links to
+        // it except the button on the calibration wizard's first screen.
+        debug: resolve(import.meta.dirname, 'debug.html'),
       },
     },
   },
