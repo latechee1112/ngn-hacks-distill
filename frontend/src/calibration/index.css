@@ -110,6 +110,17 @@ body {
   .gaze-blob-morph {
     animation: none;
   }
+
+  /* Honoured even though it costs this user the target cue - an extension
+     that exists to reduce motion cannot itself ignore the OS-level request
+     for it. Safe for the measurement: every rule compares a user's own
+     conditions against each other, never one user against another, so a
+     cue that is absent for the whole session cancels out of every
+     comparison it feeds. (trial-drift is deliberately NOT disabled here -
+     it is the motion trial's independent variable, not decoration.) */
+  .trial-target-pulse {
+    animation: none;
+  }
 }
 
 /* Continuous organic wobble for the live gaze indicator. The irregular
@@ -181,4 +192,49 @@ body {
   50% {
     transform: translateY(6px);
   }
+}
+
+/* Soft pulse on the trial's target circle. Applied to EVERY trial, never just
+   some of them - profile_rules.py only ever compares conditions against each
+   other (baseline vs spaced / contrast / motion), so a cue present uniformly
+   shifts all buckets together and leaves those relative comparisons intact.
+   Applying it to only some trials would have silently biased exactly the
+   comparisons the profile is derived from.
+
+   Scale + a fading halo, no color change: the contrast trial already varies
+   the target's own contrast treatment (ring-4 ring-accent-text), and animating
+   color here would fight that variable directly. Transform/box-shadow are also
+   compositor-friendly, which matters because gaze inference is sharing this
+   main thread. */
+@keyframes trial-target-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(111 176 232 / 40%);
+  }
+  50% {
+    transform: scale(1.07);
+    box-shadow: 0 0 0 12px rgb(111 176 232 / 0%);
+  }
+}
+
+.trial-target-pulse {
+  animation: trial-target-pulse 1.6s ease-in-out infinite;
+}
+
+/* Dwell progress for the 9-dot calibration: fills over exactly one dot's
+   interval, so the jump to the next dot is predictable instead of arriving
+   without warning. --dwell-ms is set inline from CALIBRATION_DOT_INTERVAL_MS
+   so the ring and the actual capture timer can never drift apart. */
+@keyframes dot-dwell {
+  from {
+    stroke-dashoffset: 107;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.dot-dwell {
+  animation: dot-dwell var(--dwell-ms, 1300ms) linear forwards;
 }

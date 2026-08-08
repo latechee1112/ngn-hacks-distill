@@ -8,6 +8,7 @@ import {
   type GazeSummary,
   type StoredCalibration,
 } from '../types/calibration'
+import { buildCalibrationFile, downloadCalibrationFile, parseCalibrationFile } from './calibrationFile'
 import { combineGazeStats, computeTrialGazeStats, type TrialGazeStats } from './gaze/aggregate'
 import DotCalibration from './gaze/DotCalibration'
 import { currentTargetRect, isOnTarget, toPagePoint, type PageGazePoint } from './gaze/hitTest'
@@ -127,6 +128,14 @@ function App() {
   const [trials, setTrials] = useState<CalibrationTrial[]>([])
   const [result, setResult] = useState<CalibrationProfileResponse | null>(null)
   const [error, setError] = useState('')
+  // Kept separate from `error` above: that one owns the whole 'error' step
+  // (a failed backend submit, with its own retry screen), while this renders
+  // inline under the welcome screen's load button and must not navigate away
+  // from it - picking the wrong file should leave you exactly where you were,
+  // free to pick another.
+  const [importError, setImportError] = useState('')
+  const [importedFromFile, setImportedFromFile] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Gaze state lives in refs, not React state - samples arrive many times a
   // second via the tracker's callback and never need a re-render themselves.
@@ -425,6 +434,48 @@ function App() {
     submit(trials)
   }
 
+  // Skips the entire wizard by replaying a previously saved run. The camera
+  // is never started on this path, so there is nothing to stop here.
+  async function handleCalibrationFileChosen(event: React.ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget
+    const picked = input.files?.[0]
+    // Cleared before anything else so re-picking the SAME path fires `change`
+    // again - Chrome suppresses the event when the value is unchanged, which
+    // otherwise makes the second load of a file you just re-exported look
+    // like a dead button.
+    input.value = ''
+    if (!picked) return
+
+    setImportError('')
+    const parsed = parseCalibrationFile(await picked.text())
+    if (!parsed.ok) {
+      setImportError(`Couldn't load that file — ${parsed.error}.`)
+      return
+    }
+
+    const response: CalibrationProfileResponse = {
+      profile: parsed.file.profile,
+      explanation: parsed.file.explanation,
+    }
+    try {
+      await storeResult(response)
+    } catch (err) {
+      // Reported rather than swallowed: without the storage write the profile
+      // exists only in this tab's memory, so the extension would carry on
+      // using its defaults while the results screen implied otherwise.
+      setImportError(`Loaded that file, but couldn't save it to the extension: ${String(err)}`)
+      return
+    }
+    setResult(response)
+    setImportedFromFile(true)
+    setStep('results')
+  }
+
+  function handleSaveCalibrationFile() {
+    if (!result) return
+    downloadCalibrationFile(buildCalibrationFile(result.profile, result.explanation))
+  }
+
   // Renders the per-step screen. Kept as a nested function (rather than
   // inline in the final return) so the <video> element below can sit
   // outside this step-conditional entirely - it must stay mounted across
@@ -443,6 +494,21 @@ function App() {
         <div className="flex gap-3">
           <PrimaryButton onClick={() => setStep('camera')}>Get started</PrimaryButton>
           <SecondaryButton onClick={handleSkip}>Skip for now</SecondaryButton>
+        </div>
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
+          >
+            <Icon name="upload" />
+            Already have a calibration file? Load it
+          </button>
+          {importError && (
+            <p role="alert" className="max-w-sm text-meta text-danger-text">
+              {importError}
+            </p>
+          )}
         </div>
       </Shell>
     )
@@ -554,8 +620,15 @@ function App() {
     <Shell>
       <div className="flex items-center gap-2 text-accent-text">
         <Icon name="check" />
-        <h1 className="text-title font-semibold text-on-background">You're all set</h1>
+        <h1 className="text-title font-semibold text-on-background">
+          {importedFromFile ? 'Calibration loaded' : "You're all set"}
+        </h1>
       </div>
+      {importedFromFile && (
+        <p className="text-body text-on-surface-variant">
+          Restored from a saved file — the tasks were skipped.
+        </p>
+      )}
       <ul className="flex w-full flex-col gap-2 text-left">
         {result?.explanation.map((line) => (
           <li
@@ -566,7 +639,20 @@ function App() {
           </li>
         ))}
       </ul>
-      <PrimaryButton onClick={() => window.close()}>Close this tab</PrimaryButton>
+      <div className="flex flex-col items-center gap-3">
+        <PrimaryButton onClick={() => window.close()}>Close this tab</PrimaryButton>
+        <button
+          type="button"
+          onClick={handleSaveCalibrationFile}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
+        >
+          <Icon name="download" />
+          Save calibration file
+        </button>
+        <p className="max-w-sm text-meta text-on-surface-muted">
+          Saves this profile as a .json you can load from the first screen next time, instead of redoing the tasks.
+        </p>
+      </div>
     </Shell>
   )
   }
@@ -585,6 +671,17 @@ function App() {
         className={
           step === 'gazeCalibration' ? 'fixed top-4 right-4 h-24 w-32 rounded-md object-cover' : 'sr-only'
         }
+      />
+      {/* Out here with the <video> so the element the welcome screen's load
+          button clicks through to always exists, independent of which step is
+          rendered. `hidden` rather than sr-only: this is never something to
+          reach directly, only via that button. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleCalibrationFileChosen}
       />
       {gazeActive && gazeEnabledRef.current && (
         // Lives out here, alongside the <video>, for the same reason it does:

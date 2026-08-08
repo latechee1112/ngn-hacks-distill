@@ -100,15 +100,20 @@ function TrialTask({
     console.log('[Distill] decoy click', { count: decoyClicksRef.current })
   }
 
-  // Both raised together, and the gap between them widened rather than
-  // levelled. profile_rules.py's _apply_spacing_rule only fires when the
-  // spaced condition beats baseline by >=15% completion time, and this pair
-  // of values is the entire source of that contrast - so simply spacing
-  // everything out equally would have quietly disabled the rule and pinned
-  // spacingMultiplier at its default forever. 12px -> 20px stops the tight
-  // condition from being punishing; 32px -> 48px keeps (in fact widens, 20px
-  // -> 28px) the delta the measurement depends on.
-  const gapClass = trial.variant === 'spacing' ? 'gap-12' : 'gap-5'
+  // Everything is spread out now, per an explicit request to stop any trial
+  // reading as cramped. Both values moved up together (20 -> 48, 48 -> 80)
+  // specifically so a delta survives: profile_rules.py's _apply_spacing_rule
+  // needs the spaced condition to beat baseline by >=15% completion time, and
+  // this pair is the sole source of that contrast, so levelling them would
+  // disable the rule outright and pin spacingMultiplier at its 1.15 default.
+  // Worth knowing regardless: a baseline this generous is already easy to
+  // scan, so the *marginal* gain from the extra spacing is smaller than it
+  // was, and the rule will fire less often than with a tight baseline. That
+  // is a real sensitivity cost, accepted deliberately in exchange for no
+  // trial ever feeling cramped.
+  // 5 x 64px + 4 x 80px = 640px at the widest, inside Shell's wide (768px)
+  // container.
+  const gapClass = trial.variant === 'spacing' ? 'gap-20' : 'gap-12'
 
   return (
     <div className="flex flex-col items-center gap-8">
@@ -123,7 +128,13 @@ function TrialTask({
             // Identical for every shape - see TARGET_ATTR above.
             aria-label="Shape"
             {...(shape.isTarget ? { [TARGET_ATTR]: 'true' } : {})}
-            className={`h-16 w-16 rounded-full transition-transform hover:scale-105 ${FOCUS_RING} ${
+            // The target's pulse animates transform, so it replaces the hover
+            // scale rather than stacking with it - a CSS animation wins over a
+            // transition on the same property, so keeping both would just mean
+            // a hover state that silently never applies.
+            className={`h-16 w-16 rounded-full ${FOCUS_RING} ${
+              shape.isTarget ? 'trial-target-pulse' : 'transition-transform hover:scale-105'
+            } ${
               shape.isTarget
                 ? `bg-accent ${trial.variant === 'contrast' ? 'ring-4 ring-accent-text ring-offset-2 ring-offset-background' : ''}`
                 : trial.variant === 'contrast'

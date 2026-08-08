@@ -30,6 +30,11 @@ const PATHS = {
   ],
   copy: ['M9 9h10v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9Z', 'M15 5H5a2 2 0 0 0-2 2v10'],
   check: ['m4 12 5 5L20 6'],
+  // Tray with an arrow into it / out of it — saving and loading a calibration
+  // file in the calibration wizard. Same tray path both ways so the pair reads
+  // as one control set, with only the arrow reversed.
+  download: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M12 3v12', 'm7 10 5 5 5-5'],
+  upload: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M12 15V3', 'm7 8 5-5 5 5'],
 } as const
 
 export type IconName = keyof typeof PATHS
