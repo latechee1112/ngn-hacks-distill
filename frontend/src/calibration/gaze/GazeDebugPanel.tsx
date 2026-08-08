@@ -30,6 +30,14 @@ const PLANE_H = 176
 // that the cloud still tracks where you are looking now.
 const TRAIL_LENGTH = 120
 
+// Scale for the plane view's head marker. faceOrigin3D is in centimetres from
+// the camera, and +-30cm of lateral movement is about as far as you get while
+// still being tracked at all, so it maps the panel's full width. Both of
+// these are for RELATIVE reading - watching the head drift, and seeing the
+// eyes as two distinct origins - not for absolute placement.
+const HEAD_RANGE_CM = 30
+const IPD_CM = 6.3
+
 const COLOR = {
   mesh: 'rgba(255, 255, 255, 0.55)',
   box: '#3b9dff',
@@ -43,7 +51,6 @@ const COLOR = {
   target: '#fb923c',
   trail: 'rgba(255, 255, 255, 0.5)',
   head: '#f472b6',
-  ray: '#22d3ee',
   dim: 'rgba(255, 255, 255, 0.35)',
 }
 
@@ -137,6 +144,19 @@ function GazeDebugPanel({
   const camRef = useRef<HTMLCanvasElement | null>(null)
   const planeRef = useRef<HTMLCanvasElement | null>(null)
   const readoutRef = useRef<HTMLPreElement | null>(null)
+  // A ref, not state, and toggled by a listener owned here rather than by a
+  // prop from App: a re-render would restart the draw effect below and take
+  // the gaze trail with it, so the one thing you were watching would vanish
+  // every time you pressed the key.
+  const showFaceRef = useRef(true)
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'a' || event.key === 'A') showFaceRef.current = !showFaceRef.current
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const cam = camRef.current
@@ -193,6 +213,12 @@ function GazeDebugPanel({
         camCtx.fillText('no face', 8, CAM_H - 8)
         return
       }
+      // Everything from here down is annotation. Off, this is a plain camera
+      // preview - which is what you want when checking framing, lighting or
+      // whether you are drifting out of shot, since the mesh covers exactly
+      // the part of the image you would be judging.
+      if (!showFaceRef.current) return
+
       const at = (i: number): [number, number] => [dx + marks[i].x * dw, dy + marks[i].y * dh]
 
       camCtx.fillStyle = COLOR.mesh
@@ -201,28 +227,72 @@ function GazeDebugPanel({
       }
 
       // Eyes. Radius from the eye's own corner-to-corner width so the ring
-      // stays sized to the face as it moves nearer and further.
-      for (const [eye, color] of [
-        [EYE_A, COLOR.eyeA],
-        [EYE_B, COLOR.eyeB],
-      ] as const) {
-        const [ox, oy] = at(eye.outer)
-        const [ix, iy] = at(eye.inner)
-        const r = Math.max(5, Math.hypot(ix - ox, iy - oy) * 0.55)
-        camCtx.strokeStyle = color
+      // stays sized to the face as it moves nearer and further. Coloured by
+      // which side of the IMAGE each one lands on rather than by landmark
+      // index, so cyan and yellow stay put instead of swapping if the feed
+      // ever arrives mirrored.
+      const eyes = ([EYE_A, EYE_B] as const)
+        .map((eye) => {
+          const [ox, oy] = at(eye.outer)
+          const [ix, iy] = at(eye.inner)
+          return {
+            x: (ox + ix) / 2,
+            y: (oy + iy) / 2,
+            r: Math.max(5, Math.hypot(ix - ox, iy - oy) * 0.55),
+          }
+        })
+        .sort((a, b) => a.x - b.x)
+      const eyeColors = [COLOR.eyeA, COLOR.eyeB]
+      eyes.forEach((eye, i) => {
+        camCtx.strokeStyle = eyeColors[i]
         camCtx.lineWidth = 1.5
         camCtx.beginPath()
-        camCtx.arc((ox + ix) / 2, (oy + iy) / 2, r, 0, Math.PI * 2)
+        camCtx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2)
         camCtx.stroke()
-      }
+      })
 
-      const rot = result ? rotationFrom(result.faceRt) : null
-      if (!rot) return
       const [lx, ly] = at(CHEEK_L)
       const [rx, ry] = at(CHEEK_R)
       const faceWidth = Math.hypot(rx - lx, ry - ly)
       const cx = (lx + rx) / 2
       const cy = (ly + ry) / 2
+
+      // Gaze bars: one out of each eye, pointing where that sample says you
+      // are looking. The camera feed is NOT mirrored (nothing flips it, here
+      // or in App's <video>), so it shows you as others see you - looking at
+      // the right of the screen turns your eyes toward the LEFT of this
+      // image, hence the negated x. If a feed ever does arrive mirrored, this
+      // single sign is the fix.
+      //
+      // Length grows with how far off-centre the gaze is, so looking straight
+      // down the camera axis shortens the bars to nothing rather than leaving
+      // them pointing somewhere arbitrary - the same foreshortening a real
+      // ray toward the viewer would have.
+      if (result && result.gazeState === 'open') {
+        const gx = -result.normPog[0]
+        const gy = result.normPog[1]
+        const mag = Math.hypot(gx, gy)
+        if (mag > 0.02) {
+          const ux = gx / mag
+          const uy = gy / mag
+          const len = faceWidth * (0.3 + 2.4 * mag)
+          camCtx.lineCap = 'round'
+          camCtx.lineWidth = 3
+          eyes.forEach((eye, i) => {
+            camCtx.strokeStyle = eyeColors[i]
+            camCtx.beginPath()
+            // Started at the ring's edge, not its centre, so the bar reads as
+            // leaving the eye instead of skewering it.
+            camCtx.moveTo(eye.x + ux * eye.r, eye.y + uy * eye.r)
+            camCtx.lineTo(eye.x + ux * len, eye.y + uy * len)
+            camCtx.stroke()
+          })
+          camCtx.lineCap = 'butt'
+        }
+      }
+
+      const rot = result ? rotationFrom(result.faceRt) : null
+      if (!rot) return
 
       // Weak perspective: rotate into camera space, then scale each vertex by
       // its own depth. Enough to make the box read as 3D without needing the
@@ -313,10 +383,22 @@ function GazeDebugPanel({
       // Head position from faceOrigin3D (centimetres from the camera).
       // Divided by a plausible half-range rather than anything measured -
       // this marker is for watching DRIFT, not for absolute placement.
-      let head: [number, number] | null = null
+      let eyePoints: [number, number][] = []
       const origin = result?.faceOrigin3D
       if (origin && origin.length >= 2 && Number.isFinite(origin[0])) {
-        head = toPx(Math.max(-0.9, Math.min(0.9, origin[0] / 30)), Math.max(-0.9, Math.min(0.9, origin[1] / 30)))
+        const clamp = (v: number) => Math.max(-0.9, Math.min(0.9, v))
+        const hx = clamp(origin[0] / HEAD_RANGE_CM)
+        const hy = clamp(origin[1] / HEAD_RANGE_CM)
+        const head = toPx(hx, hy)
+        // The two eyes, half an interpupillary distance either side of the
+        // head origin - in the same centimetre scale, so the separation here
+        // is to the same rough scale as everything else on this panel.
+        // Camera +x is toward the image right, matching the camera panel
+        // above, so the eye drawn left of centre is the cyan one there too.
+        eyePoints = [
+          toPx(clamp((origin[0] - IPD_CM / 2) / HEAD_RANGE_CM), hy),
+          toPx(clamp((origin[0] + IPD_CM / 2) / HEAD_RANGE_CM), hy),
+        ]
         planeCtx.strokeStyle = COLOR.head
         planeCtx.lineWidth = 1.5
         planeCtx.beginPath()
@@ -332,14 +414,20 @@ function GazeDebugPanel({
 
       if (result && result.gazeState === 'open') {
         const [gx, gy] = toPx(result.normPog[0], result.normPog[1])
-        if (head) {
-          planeCtx.strokeStyle = COLOR.ray
-          planeCtx.lineWidth = 1.5
+        // The same two bars as the camera panel, seen from the other side:
+        // there they leave the eyes, here they arrive at the point on the
+        // screen they were aimed at.
+        const eyeColors = [COLOR.eyeA, COLOR.eyeB]
+        eyePoints.forEach((eye, i) => {
+          planeCtx.strokeStyle = eyeColors[i]
+          planeCtx.lineWidth = 2
+          planeCtx.lineCap = 'round'
           planeCtx.beginPath()
-          planeCtx.moveTo(head[0], head[1])
+          planeCtx.moveTo(eye[0], eye[1])
           planeCtx.lineTo(gx, gy)
           planeCtx.stroke()
-        }
+          planeCtx.lineCap = 'butt'
+        })
         planeCtx.strokeStyle = COLOR.screen
         planeCtx.lineWidth = 2
         planeCtx.beginPath()
@@ -379,6 +467,7 @@ function GazeDebugPanel({
           `rate   ${fps.toFixed(1)}/s`,
           `pog    ${pog ? `${pog[0].toFixed(3)}, ${pog[1].toFixed(3)}` : '—'}`,
           `calib  ${tracker.getCalibrationPairs().length} pts${tracker.isCorrectionFromFile() ? ' (file)' : ''}`,
+          `face   ${showFaceRef.current ? 'on' : 'off'}`,
         ].join('\n')
       }
     }
@@ -412,7 +501,9 @@ function GazeDebugPanel({
         ref={readoutRef}
         className="m-0 border-t border-white/10 px-3 py-2 font-mono text-[10px] leading-[1.5] text-white/70"
       />
-      <p className="m-0 px-3 pb-2 font-mono text-[10px] text-white/40">F8 = hide debug view</p>
+      <p className="m-0 px-3 pb-2 font-mono text-[10px] text-white/40">
+        A = face overlay · F8 = hide debug view
+      </p>
     </div>
   )
 }
