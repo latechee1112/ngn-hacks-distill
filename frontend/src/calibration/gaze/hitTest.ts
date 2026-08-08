@@ -1,4 +1,5 @@
 import type { GazeResult } from 'webeyetrack'
+import { TARGET_SELECTOR } from '../TrialTask'
 import { DECOY_AD_ID, DECOY_SIDEBAR_ID } from './Decoys'
 
 export interface PageGazePoint {
@@ -24,9 +25,9 @@ export function toPagePoint(result: GazeResult, capturedAt: number): PageGazePoi
   }
 }
 
-// Gaze error is roughly 85-90px (~2.3cm) - well above the 56px target
-// shapes, so per-shape hit-testing is below the noise floor. Only the two
-// (much larger) decoys are actually measurable gaze targets.
+// Gaze error is roughly 85-90px (~2.3cm) - still well above the 64px target
+// shapes, so per-shape hit-testing remains below the noise floor. Only the
+// two (much larger) decoys are actually measurable gaze targets.
 const HIT_TOLERANCE_PX = 60
 
 function inflatedRectContains(rect: DOMRect, x: number, y: number): boolean {
@@ -50,5 +51,5 @@ export function isOnTarget(point: PageGazePoint, targetRect: DOMRect | null): bo
 }
 
 export function currentTargetRect(): DOMRect | null {
-  return document.querySelector('[aria-label="Target shape"]')?.getBoundingClientRect() ?? null
+  return document.querySelector(TARGET_SELECTOR)?.getBoundingClientRect() ?? null
 }

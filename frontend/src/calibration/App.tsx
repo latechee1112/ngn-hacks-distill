@@ -13,7 +13,7 @@ import DotCalibration from './gaze/DotCalibration'
 import { currentTargetRect, isOnTarget, toPagePoint, type PageGazePoint } from './gaze/hitTest'
 import { GAZE_VIDEO_ID, useGazeTracker } from './gaze/useGazeTracker'
 import TrialTask from './TrialTask'
-import { TRIALS } from './trials'
+import { PRACTICE_TRIAL, TRIALS } from './trials'
 
 // Local dev backend — same origin the background service worker's
 // analyze-page calls use. Unlike a content script, this page runs at the
@@ -45,7 +45,16 @@ async function storeResult(response: CalibrationProfileResponse) {
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-surface-variant focus-visible:ring-offset-2 focus-visible:ring-offset-background'
 
-type Step = 'welcome' | 'camera' | 'gazeCalibration' | 'trials' | 'submitting' | 'results' | 'error' | 'skipped'
+type Step =
+  | 'welcome'
+  | 'camera'
+  | 'gazeCalibration'
+  | 'practice'
+  | 'trials'
+  | 'submitting'
+  | 'results'
+  | 'error'
+  | 'skipped'
 
 function PrimaryButton({
   onClick,
@@ -80,7 +89,19 @@ function SecondaryButton({ onClick, children }: { onClick: () => void; children:
   )
 }
 
-function Shell({ children, showGlow = false }: { children: React.ReactNode; showGlow?: boolean }) {
+function Shell({
+  children,
+  showGlow = false,
+  wide = false,
+}: {
+  children: React.ReactNode
+  showGlow?: boolean
+  // The task screens need more room than the reading screens: the spacing
+  // trial's grid is 5 x 64px + 4 x 48px = 512px, exactly max-w-lg, which
+  // would leave it wedged edge-to-edge with no breathing room at all. Prose
+  // steps keep the narrower measure, which is easier to read.
+  wide?: boolean
+}) {
   return (
     <div className="relative isolate flex min-h-screen flex-col items-center justify-center gap-8 overflow-hidden bg-background px-6 py-16 text-center">
       {showGlow && (
@@ -93,7 +114,9 @@ function Shell({ children, showGlow = false }: { children: React.ReactNode; show
         <Icon name="funnel" />
         <span className="text-meta font-semibold tracking-[0.08em] uppercase">Distill</span>
       </div>
-      <div className="relative z-10 flex w-full max-w-lg flex-col items-center gap-6">{children}</div>
+      <div className={`relative z-10 flex w-full flex-col items-center gap-6 ${wide ? 'max-w-3xl' : 'max-w-lg'}`}>
+        {children}
+      </div>
     </div>
   )
 }
@@ -172,8 +195,17 @@ function App() {
     }
   }, [])
 
+  // The blob runs across practice AND the real trials - practice exists so
+  // nothing about the measured trials is a first-time experience, and a gaze
+  // indicator appearing out of nowhere the moment scoring starts would defeat
+  // that. Derived into a boolean (rather than depending on `step` directly)
+  // so the practice -> trials transition does NOT tear down and restart this
+  // loop: the smoothing/velocity state below stays continuous across the
+  // boundary instead of snapping the blob back to a cold start.
+  const gazeActive = step === 'practice' || step === 'trials'
+
   useEffect(() => {
-    if (step !== 'trials' || !gazeEnabledRef.current) return
+    if (!gazeActive || !gazeEnabledRef.current) return
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let frameId = 0
     let lastConsumedPoint: PageGazePoint | null = null
@@ -273,7 +305,7 @@ function App() {
       prevTickAtRef.current = 0
       smoothedVelRef.current = { x: 0, y: 0 }
     }
-  }, [step])
+  }, [gazeActive])
 
   const tracker = useGazeTracker(handleGazeSample)
 
@@ -288,6 +320,16 @@ function App() {
 
   function handleGazeCalibrationDone() {
     gazeEnabledRef.current = true
+    setStep('practice')
+  }
+
+  // The practice run's own CalibrationTrial is discarded, never added to
+  // `trials` and never submitted - see PRACTICE_TRIAL in trials.ts. Its gaze
+  // samples are dropped too, and the trial clock only starts here, so the
+  // first *measured* trial's window can't be polluted by however long
+  // someone spent getting comfortable with the practice one.
+  function handlePracticeComplete() {
+    gazeSamplesRef.current = []
     trialStartRef.current = performance.now()
     setStep('trials')
   }
@@ -327,8 +369,7 @@ function App() {
     console.warn('[Distill] gaze calibration failed, continuing without camera:', message)
     tracker.stop()
     gazeEnabledRef.current = false
-    trialStartRef.current = performance.now()
-    setStep('trials')
+    setStep('practice')
   }
 
   function handleTrialComplete(outcome: CalibrationTrial) {
@@ -418,7 +459,7 @@ function App() {
         </p>
         <div className="flex gap-3">
           <PrimaryButton onClick={enableCamera}>Enable camera</PrimaryButton>
-          <SecondaryButton onClick={() => setStep('trials')}>Skip — continue without camera</SecondaryButton>
+          <SecondaryButton onClick={() => setStep('practice')}>Skip — continue without camera</SecondaryButton>
         </div>
       </Shell>
     )
@@ -434,33 +475,29 @@ function App() {
     )
   }
 
+  if (step === 'practice') {
+    return (
+      <Shell wide>
+        <p className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">Practice</p>
+        <h1 className="text-title font-semibold text-on-background">Let's try one first</h1>
+        <p className="max-w-md text-body text-on-surface-variant">
+          This one isn't scored — it's just so the real tasks aren't the first time you've seen this. Take as long
+          as you like.
+        </p>
+        <TrialTask
+          key={PRACTICE_TRIAL.id}
+          trial={PRACTICE_TRIAL}
+          onComplete={handlePracticeComplete}
+          onTargetHit={handleTargetHit}
+          isPractice
+        />
+      </Shell>
+    )
+  }
+
   if (step === 'trials') {
     return (
-      <Shell>
-        {gazeEnabledRef.current && (
-          // Outer div: position + velocity only (JS-written transform every
-          // animation frame, see the effect above). Inner div: the organic
-          // morph animation (gaze-blob-morph, index.css) - kept on a
-          // separate element so the two animations don't fight over the
-          // same style properties. Pulled back down from 350px (too big) to
-          // 256px - still bigger than hitTest.ts's own ~85-90px gaze error
-          // estimate, so it still honestly reads as an uncertainty blob, not
-          // a precise cursor. Cyan, not accent's blue (#2f6fb5) - the target
-          // shape itself is bg-accent, so the gaze indicator needs a
-          // visibly different hue to stay distinguishable from what's
-          // actually being clicked.
-          <div
-            ref={gazeDotRef}
-            aria-hidden="true"
-            // Position/stretch are written once per animation frame. Only
-            // opacity is transitioned; transitioning transform as well would
-            // restart a second interpolation on every frame and reintroduce
-            // the stutter this loop is designed to remove.
-            className="pointer-events-none fixed top-0 left-0 z-50 h-64 w-64 opacity-0 transition-opacity duration-200 ease-out will-change-transform"
-          >
-            <div className="gaze-blob-morph absolute inset-0" />
-          </div>
-        )}
+      <Shell wide>
         <p className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">
           Step {trialIndex + 1} of {TRIALS.length}
         </p>
@@ -549,6 +586,36 @@ function App() {
           step === 'gazeCalibration' ? 'fixed top-4 right-4 h-24 w-32 rounded-md object-cover' : 'sr-only'
         }
       />
+      {gazeActive && gazeEnabledRef.current && (
+        // Lives out here, alongside the <video>, for the same reason it does:
+        // it has to stay mounted across the practice -> trials step change.
+        // Rendered inside either step's own screen it would be a different
+        // subtree per step, so React would unmount and remount it at the
+        // boundary - resetting the opacity transition (a visible flicker)
+        // right as scoring begins.
+        //
+        // Outer div: position + velocity only (JS-written transform every
+        // animation frame, see the effect above). Inner div: the organic
+        // morph animation (gaze-blob-morph, index.css) - kept on a separate
+        // element so the two animations don't fight over the same style
+        // properties. Pulled back down from 350px (too big) to 256px - still
+        // bigger than hitTest.ts's own ~85-90px gaze error estimate, so it
+        // still honestly reads as an uncertainty blob, not a precise cursor.
+        // Cyan, not accent's blue (#2f6fb5) - the target shape itself is
+        // bg-accent, so the gaze indicator needs a visibly different hue to
+        // stay distinguishable from what's actually being clicked.
+        <div
+          ref={gazeDotRef}
+          aria-hidden="true"
+          // Position/stretch are written once per animation frame. Only
+          // opacity is transitioned; transitioning transform as well would
+          // restart a second interpolation on every frame and reintroduce
+          // the stutter this loop is designed to remove.
+          className="pointer-events-none fixed top-0 left-0 z-50 h-64 w-64 opacity-0 transition-opacity duration-200 ease-out will-change-transform"
+        >
+          <div className="gaze-blob-morph absolute inset-0" />
+        </div>
+      )}
       {renderStep()}
     </>
   )

@@ -23,12 +23,20 @@
 
   --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
 
-  --text-meta: 11px;
-  --text-meta--line-height: 16px;
-  --text-body: 13px;
-  --text-body--line-height: 20px;
-  --text-title: 15px;
-  --text-title--line-height: 20px;
+  /* Deliberately NOT the sidepanel's scale, unlike the color tokens above.
+     Those were copied wholesale from sidepanel/index.css, type included -
+     but that file is sized for a 380x600 popup, and this is a full browser
+     tab. 13px body copy in a full-width wizard is small for anyone and
+     actively hostile to the low-vision / visual-processing audience this
+     whole extension exists to serve. Scaled up to full-page reading sizes;
+     the sidepanel keeps its own (popup-appropriate) values, since the two
+     files are independent copies rather than one shared import. */
+  --text-meta: 13px;
+  --text-meta--line-height: 18px;
+  --text-body: 17px;
+  --text-body--line-height: 27px;
+  --text-title: 28px;
+  --text-title--line-height: 36px;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }

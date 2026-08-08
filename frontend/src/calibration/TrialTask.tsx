@@ -1,12 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CalibrationTrial } from '../types/calibration'
 import Decoys from './gaze/Decoys'
-import { TRIAL_TIMEOUT_MS, type TrialConfig } from './trials'
+import { NUDGE_AFTER_MS, TRIAL_TIMEOUT_MS, type TrialConfig } from './trials'
 
 interface Shape {
   index: number
   isTarget: boolean
 }
+
+// Marks the one correct shape, for gaze hit-testing to find (hitTest.ts's
+// currentTargetRect). Deliberately a data- attribute rather than the
+// aria-label this replaced: that label announced "Target shape" vs
+// "Distractor shape" to a screen reader, which handed over the answer to a
+// visual-search task and corrupted the very measurement being scored. Both
+// shapes now carry an identical accessible name, so nothing leaks through the
+// accessibility tree. Exported (rather than duplicated as a string literal in
+// hitTest.ts) so the markup and the selector can't drift apart - same pattern
+// as Decoys.tsx's exported element ids.
+export const TARGET_ATTR = 'data-distill-target'
+export const TARGET_SELECTOR = `[${TARGET_ATTR}="true"]`
 
 function buildShapes(count: number): Shape[] {
   const targetIndex = Math.floor(Math.random() * count)
@@ -20,6 +32,7 @@ function TrialTask({
   trial,
   onComplete,
   onTargetHit,
+  isPractice = false,
 }: {
   trial: TrialConfig
   onComplete: (result: CalibrationTrial) => void
@@ -28,6 +41,8 @@ function TrialTask({
   // into live recalibration. Never fired for decoy/wrong-shape clicks,
   // since only a correct hit reliably means the gaze was actually there.
   onTargetHit?: (x: number, y: number) => void
+  // Practice runs are untimed and their result is discarded by the caller.
+  isPractice?: boolean
 }) {
   // App.tsx mounts a fresh TrialTask per trial (key={trial.id}), so these only
   // ever need to be computed once per mount — no reset-on-prop-change effect.
@@ -38,10 +53,19 @@ function TrialTask({
   const decoyClicksRef = useRef(0)
   const startRef = useRef(performance.now())
   const doneRef = useRef(false)
+  // State, not a ref: this one has to actually re-render to appear.
+  const [showNudge, setShowNudge] = useState(false)
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => finish(false), TRIAL_TIMEOUT_MS)
-    return () => window.clearTimeout(timeout)
+    const nudge = window.setTimeout(() => setShowNudge(true), NUDGE_AFTER_MS)
+    // Practice is untimed on purpose - it is never scored or submitted, so a
+    // clock would only add pressure with nothing to protect. The nudge above
+    // still offers a way forward for someone who is stuck.
+    const timeout = isPractice ? null : window.setTimeout(() => finish(false), TRIAL_TIMEOUT_MS)
+    return () => {
+      window.clearTimeout(nudge)
+      if (timeout !== null) window.clearTimeout(timeout)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -76,20 +100,30 @@ function TrialTask({
     console.log('[Distill] decoy click', { count: decoyClicksRef.current })
   }
 
-  const gapClass = trial.variant === 'spacing' ? 'gap-8' : 'gap-3'
+  // Both raised together, and the gap between them widened rather than
+  // levelled. profile_rules.py's _apply_spacing_rule only fires when the
+  // spaced condition beats baseline by >=15% completion time, and this pair
+  // of values is the entire source of that contrast - so simply spacing
+  // everything out equally would have quietly disabled the rule and pinned
+  // spacingMultiplier at its default forever. 12px -> 20px stops the tight
+  // condition from being punishing; 32px -> 48px keeps (in fact widens, 20px
+  // -> 28px) the delta the measurement depends on.
+  const gapClass = trial.variant === 'spacing' ? 'gap-12' : 'gap-5'
 
   return (
     <div className="flex flex-col items-center gap-8">
       <Decoys onDecoyClick={handleDecoyClick} />
-      <p className="text-body text-on-surface">{trial.instructions}</p>
+      <p className="max-w-md text-body text-on-surface">{trial.instructions}</p>
       <div className={`grid grid-cols-5 ${gapClass}`}>
         {shapes.map((shape) => (
           <button
             key={shape.index}
             type="button"
             onClick={(e) => handleClick(shape, e)}
-            aria-label={shape.isTarget ? 'Target shape' : 'Distractor shape'}
-            className={`h-14 w-14 rounded-full transition-transform hover:scale-105 ${FOCUS_RING} ${
+            // Identical for every shape - see TARGET_ATTR above.
+            aria-label="Shape"
+            {...(shape.isTarget ? { [TARGET_ATTR]: 'true' } : {})}
+            className={`h-16 w-16 rounded-full transition-transform hover:scale-105 ${FOCUS_RING} ${
               shape.isTarget
                 ? `bg-accent ${trial.variant === 'contrast' ? 'ring-4 ring-accent-text ring-offset-2 ring-offset-background' : ''}`
                 : trial.variant === 'contrast'
@@ -103,6 +137,24 @@ function TrialTask({
             }
           />
         ))}
+      </div>
+      {/* Fixed-height slot, always rendered. The nudge appears mid-trial, and
+          letting it grow the column would shift the shape grid - moving the
+          target out from under a cursor already on its way to it, and
+          invalidating the completion time being measured. */}
+      <div className="flex h-16 items-start justify-center" aria-live="polite">
+        {showNudge && !doneRef.current && (
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-meta text-on-surface-variant">Still looking? There's no rush.</p>
+            <button
+              type="button"
+              onClick={() => finish(false)}
+              className={`rounded-md border border-outline bg-surface px-4 py-2 text-meta font-medium text-on-surface transition-colors hover:bg-surface-hover ${FOCUS_RING}`}
+            >
+              {isPractice ? 'Skip practice' : 'Skip this one'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
