@@ -817,7 +817,7 @@ export function revealSimplification(): void {
   // on REVEAL_ATTR, so the pre-reveal pass cannot know the sizes users will
   // actually see. Re-measure synchronously now that those rules are active;
   // setLargerText() clears its old targets before reading, then applies a true
-  // 20% increase over the final simplified sizes.
+  // 30% increase over the final simplified sizes.
   if (isLargerTextOn()) setLargerText(true)
 
   window.setTimeout(() => {
@@ -1040,7 +1040,7 @@ export function setReduceMotion(enabled: boolean): boolean {
 
 // A noticeable but restrained increase. Each target receives an absolute pixel
 // value derived from its computed size so explicit site font sizes also respond.
-const LARGER_TEXT_SCALE = 1.2
+const LARGER_TEXT_SCALE = 1.3
 const MIN_TEXT_CLASS = 'distill-min-text-size'
 const MIN_TEXT_ATTR = 'data-distill-larger-text'
 const LARGER_TEXT_SIZE_PROP = '--distill-larger-font-size'

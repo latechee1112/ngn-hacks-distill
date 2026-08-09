@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import Icon from './Icon'
 import type { ExtractionResult } from '../types/page'
-import type { SimplifyResponse, VisualProfile } from '../types/analysis'
+import type { SimplifyResponse } from '../types/analysis'
 import { CALIBRATION_STORAGE_KEY, type StoredCalibration } from '../types/calibration'
 
 async function getActiveTabId(): Promise<number | null> {
@@ -110,21 +110,13 @@ function App() {
   // calibration wizard (src/calibration/App.tsx) — starts hidden so it
   // doesn't flash on before the storage check below resolves.
   const [showCalibrationBanner, setShowCalibrationBanner] = useState(false)
-  // The "Default Profile" card's actual data - null until a calibration run
-  // has completed at least once (checkCalibrationStatus below was reading
-  // record.profile only to decide the banner, never storing it anywhere the
-  // card could read from, which is why the card never changed).
-  const [calibrationProfile, setCalibrationProfile] = useState<VisualProfile | null>(null)
-
   async function checkCalibrationStatus() {
     try {
       const stored = await chrome.storage.local.get(CALIBRATION_STORAGE_KEY)
       const record = stored?.[CALIBRATION_STORAGE_KEY] as StoredCalibration | undefined
       setShowCalibrationBanner(!record?.profile && !record?.dismissed)
-      setCalibrationProfile(record?.profile ?? null)
     } catch {
       setShowCalibrationBanner(false)
-      setCalibrationProfile(null)
     }
   }
 
@@ -489,14 +481,11 @@ function App() {
           <div className="mb-2 flex items-center gap-2">
             <Icon name="user" className="text-on-surface-variant" />
             <h3 className="text-body font-medium text-on-surface">
-              {calibrationProfile ? 'Your Profile' : 'Calibrated to Chenyu Lu'}
+              Calibrated to Chenyu Lu
             </h3>
           </div>
           <p className="text-meta text-on-surface-variant">
-            {calibrationProfile
-              ? `Spacing: +${Math.round((calibrationProfile.spacingMultiplier - 1) * 100)}% · Text: ${calibrationProfile.textScale}x · ${calibrationProfile.contrastMode === 'enhanced' ? 'High Contrast' : 'Standard Contrast'
-              }`
-              : 'Spacing: +40% · Text: 1.15x · High Contrast'}
+            Spacing: +10% · Text: 1.05x · Monochrome Text
           </p>
         </div>
 
