@@ -23,7 +23,7 @@ const REDUCE_MOTION_ATTR = 'data-distill-reduce-motion'
 // Set once the scan sweep (scanAnimation.ts) has actually finished, not the moment
 // the classes below get added to the DOM. applyBackendActions()/applySimplification()
 // run the instant the backend responds, which is usually well before the sweep's own
-// minimum-visible-time + outro are done — the sweep is only a translucent wash, so
+// minimum-visible-time + outro are done - the sweep is only a translucent wash, so
 // without this gate the reading column narrowing and every dim/hide effect are plainly
 // visible shifting underneath it, mid-animation, instead of appearing to resolve once
 // the sweep clears. revealSimplification() is the only thing that sets this, called
@@ -84,7 +84,7 @@ function findPrimaryContent(): Element | null {
 }
 
 // A reading column only helps actual reading. Prose is text-dense with few links per
-// character; a feed or results grid is the opposite — thousands of characters that are
+// character; a feed or results grid is the opposite - thousands of characters that are
 // almost all link text, spread across cards. Narrowing the latter to 760px is what
 // squeezes a YouTube home page into a strip.
 const PROSE_MIN_TEXT = 600
@@ -100,7 +100,7 @@ function isProseLike(el: Element): boolean {
 }
 
 // Marks an element as the primary region, and gives it the reading column only if it
-// actually reads like an article — and only if the page's site rule (if any) hasn't
+// actually reads like an article - and only if the page's site rule (if any) hasn't
 // opted out, which is how a hand-tuned page keeps its own layout and gets nothing but
 // the blur it asked for.
 function markPrimary(el: Element): void {
@@ -110,12 +110,12 @@ function markPrimary(el: Element): void {
 }
 
 // Prevents nested targets (e.g. an ad div inside an aside) from having opacity applied
-// twice — CSS opacity compounds with ancestors, which would make nested targets vanish.
+// twice - CSS opacity compounds with ancestors, which would make nested targets vanish.
 //
 // Marks the candidates and asks the DOM which ones have a marked ancestor, rather than
 // comparing every pair: the pairwise form is O(n²) contains() calls, and a feed page
 // produces hundreds of candidates. closest() walks ancestors instead, so this is
-// O(n × depth). The attribute is transient — set and removed inside this function —
+// O(n × depth). The attribute is transient - set and removed inside this function -
 // and the ad observer watches childList only, so it cannot retrigger anything.
 const NESTING_MARK_ATTR = 'data-distill-nesting-mark'
 
@@ -143,7 +143,7 @@ function collectNoiseTargets(primary: Element | null): Element[] {
 
   // Sticky/fixed chrome (promo bars, sticky headers) often isn't caught by the selector
   // above, so do a bounded pass over top-level containers by computed style. Safety-critical
-  // fixed chrome — cookie/consent banners, warnings — must be excluded here specifically,
+  // fixed chrome - cookie/consent banners, warnings - must be excluded here specifically,
   // since "sticky/fixed" is exactly the shape a consent banner normally takes.
   document.querySelectorAll('body > *, header, div, section').forEach((el) => {
     if (targets.has(el)) return
@@ -158,11 +158,11 @@ function collectNoiseTargets(primary: Element | null): Element[] {
 
 // --- Ads and sponsored content -------------------------------------------
 // Ads are removed from view outright (display:none) rather than dimmed like other
-// noise: a faded ad is still an ad competing for attention. Nothing is deleted —
+// noise: a faded ad is still an ad competing for attention. Nothing is deleted -
 // this is the same class-toggle + saveOriginal machinery as everything else, so
 // restoreOriginalPage() brings them all back.
 
-// Deliberately loose — every hit is re-checked with isAdLike(), which is the part
+// Deliberately loose - every hit is re-checked with isAdLike(), which is the part
 // that actually decides. Cheap to over-select here, expensive to miss.
 const AD_CANDIDATE_SELECTOR =
   '[class*="ad" i], [id*="ad" i], [class*="sponsor" i], [id*="sponsor" i], ' +
@@ -179,7 +179,7 @@ const MAX_CARD_WALK_DEPTH = 8
 // A container holding this much text is a feed/page region, not a single ad card.
 const MAX_CARD_TEXT_LENGTH = 4000
 
-// Three or more same-tag children means `parent` is the list and `child` is one entry —
+// Three or more same-tag children means `parent` is the list and `child` is one entry -
 // so `child` is the whole ad card and climbing any further would take out the feed.
 function isFeedContainer(parent: Element, child: Element): boolean {
   return Array.from(parent.children).filter((c) => c.tagName === child.tagName).length >= 3
@@ -231,7 +231,7 @@ function collectAdTargets(primary: Element | null, roots: Element[] = [document.
   const targets = new Set<Element>()
 
   const consider = (el: Element) => {
-    // Already resolved by an earlier pass — the expensive checks below can be skipped.
+    // Already resolved by an earlier pass - the expensive checks below can be skipped.
     if (el.classList.contains(AD_HIDDEN_CLASS) || el.closest(`.${AD_HIDDEN_CLASS}`)) return
     if (isProtectedFromSimplification(el)) return
     // The primary content itself is never an ad, and hiding an ancestor of it
@@ -269,7 +269,7 @@ function collectAdTargets(primary: Element | null, roots: Element[] = [document.
 // Blurred locally in the same pre-filter pass as ads, for the same reason: a right
 // rail of "Top Stories", a nav, a footer, a related-articles module is secondary on
 // essentially every page, and waiting for the backend to say so leaves it sharp and
-// competing with the article. The backend can still overrule any of it — see the
+// competing with the article. The backend can still overrule any of it - see the
 // emphasize/keep cases in applyBackendActions().
 
 const SECONDARY_SELECTOR =
@@ -287,8 +287,8 @@ const SECONDARY_SELECTOR =
 const SIDEBAR_MAX_WIDTH_RATIO = 0.6
 const SIDEBAR_MAX_TEXT_RATIO = 0.5
 const SIDEBAR_MIN_LINKS = 3
-// Bounds the rect reads on very large documents. Generous — a deep page settles well
-// under this — but keeps the pass from ever becoming the slow part of simplification.
+// Bounds the rect reads on very large documents. Generous - a deep page settles well
+// under this - but keeps the pass from ever becoming the slow part of simplification.
 const COLUMN_SCAN_BUDGET = 4000
 
 function isSideBySide(a: DOMRect, b: DOMRect): boolean {
@@ -329,7 +329,7 @@ function collectSidebarColumns(): Element[] {
 
 // `spared` holds the blocks the backend explicitly ruled 'keep' or 'emphasize'. This
 // pass runs after the backend's, so without that list it would re-blur, on shape alone,
-// blocks the model just read the page and decided to keep — the exact precedence the
+// blocks the model just read the page and decided to keep - the exact precedence the
 // emphasize/keep cases exist to establish.
 function collectSecondaryTargets(primary: Element | null, spared: Element[] = []): Element[] {
   const targets = new Set<Element>()
@@ -364,15 +364,15 @@ function deemphasizeSecondary(primary: Element | null, spared: Element[] = []): 
 }
 
 // Stage 1 of simplification, run by content.ts BEFORE the page is extracted and sent
-// to the backend. Everything unambiguous — "Promoted"/"Sponsored" badges, ad-network
-// frames, ad-named containers — is resolved locally and instantly: the user sees the
+// to the backend. Everything unambiguous - "Promoted"/"Sponsored" badges, ad-network
+// frames, ad-named containers - is resolved locally and instantly: the user sees the
 // clutter go immediately instead of waiting on a network round-trip, and extractPage()
 // then skips these blocks, so the backend only spends its judgement on the genuinely
 // ambiguous rest of the page.
 //
 // Ads only. This pass used to blur secondary content too, which meant a guessed blur
 // landed while the scan animation was still running and was then revised a second or
-// two later when the analysis came back — the user watched the page shift under a
+// two later when the analysis came back - the user watched the page shift under a
 // sweep that is supposed to mean "still deciding". Nothing is blurred until the
 // analysis is in; hiding an ad is a removal, not a blur, and nothing later revises it,
 // so that part stays immediate.
@@ -420,7 +420,7 @@ function scheduleAdCollapse(targets: HTMLElement[]): void {
 // until the next page of results.
 //
 // Two things keep the rescan off the scroll path. It is debounced on idle rather than
-// run per frame — a feed mutates continuously while scrolling, and a per-frame
+// run per frame - a feed mutates continuously while scrolling, and a per-frame
 // full-document sweep is felt as jank. And it scans only the subtrees that were
 // actually inserted, not the whole page. Only childList is observed, so our own class
 // changes can't re-trigger it.
@@ -462,7 +462,7 @@ function stopAdObserver(): void {
 }
 
 // Sticky and fixed need different replacements to stay layout-neutral, and only the
-// computed style knows which one this is — so the choice is made here, in JS, rather
+// computed style knows which one this is - so the choice is made here, in JS, rather
 // than by one blanket CSS rule.
 function unstick(el: Element): void {
   const position = getComputedStyle(el).position
@@ -579,7 +579,7 @@ html[${REVEAL_ATTR}] .${DEEMPHASIZE_CLASS} a[href] {
   filter: none !important;
 }
 /* Hand-tuned per-site targets (siteRules.ts). Unlike .${DEEMPHASIZE_CLASS}, this does
-   NOT exempt nested links/buttons — every one of these targets (Like button, team
+   NOT exempt nested links/buttons - every one of these targets (Like button, team
    member links, tab links) is interactive, and blurring social proof only works if it
    covers those too. Hover still reveals, so nothing becomes unreachable, and
    pointer-events stay on so the revealed control is clickable. Gated on [${REVEAL_ATTR}]
@@ -607,7 +607,7 @@ html[${REVEAL_ATTR}] .${HARD_BLUR_CLASS}:focus-within img {
   opacity: 1 !important;
 }
 /* Un-sticking must not change layout. position:static would drop a fixed header into
-   normal flow, pushing everything below it down — on a site whose hero sizes itself
+   normal flow, pushing everything below it down - on a site whose hero sizes itself
    against that header, the hero visibly grows by exactly the header's height.
    absolute/relative stop the element from following the scroll while it keeps the
    exact box it already had: fixed elements stay out of flow, sticky ones keep the
@@ -781,7 +781,7 @@ export function isSimplificationActive(): boolean {
 
 // A gentle top-to-bottom cascade, echoing the beam that just swept the same
 // direction: the closer to the top of the viewport a block is, the sooner it
-// resolves. Capped well short of feeling laggy, and only spans the viewport — a
+// resolves. Capped well short of feeling laggy, and only spans the viewport - a
 // long page's off-screen content all shares the cap rather than queuing up a
 // wave the user would have to scroll to see finish. Shared by deemphasized and
 // ad-hidden elements alike, so the whole page settles as one cascade rather than
@@ -800,7 +800,7 @@ function setRevealDelay(el: HTMLElement): void {
 }
 
 // Called from content.ts once the scan sweep has actually finished (its onReveal
-// callback) — see REVEAL_ATTR's declaration for why this is a separate step from
+// callback) - see REVEAL_ATTR's declaration for why this is a separate step from
 // applying the classes themselves.
 export function revealSimplification(): void {
   // Read every rect before the attribute flips - once it does, the gated rules
@@ -868,7 +868,7 @@ export function applySimplification(): SimplifyResult {
   injectGlobalStyle()
   // The only place the hand-tuned blur is applied: after the analysis, so the page
   // never flickers mid-load, and last, so a backend 'keep'/'emphasize' on a block
-  // that overlaps a hand-tuned region can't un-blur it — a hardcoded rule is a
+  // that overlaps a hand-tuned region can't un-blur it - a hardcoded rule is a
   // deliberate choice and outranks any inference.
   applySiteRules()
   ensureRestoreButton()
@@ -943,7 +943,7 @@ export function applyBackendActions(actions: BlockAction[], layout: LayoutSettin
 
   // The obvious-secondary sweep (rails, footers, "related" modules) used to run in the
   // pre-filter, before the analysis. It happens here now so that nothing blurs while
-  // the scan animation is still playing — and since it lands after the actions, it is
+  // the scan animation is still playing - and since it lands after the actions, it is
   // told which blocks the backend spared so it can't overrule them.
   deemphasizedCount += deemphasizeSecondary(primary, spared)
 
@@ -951,7 +951,7 @@ export function applyBackendActions(actions: BlockAction[], layout: LayoutSettin
   injectGlobalStyle()
   // The only place the hand-tuned blur is applied: after the analysis, so the page
   // never flickers mid-load, and last, so a backend 'keep'/'emphasize' on a block
-  // that overlaps a hand-tuned region can't un-blur it — a hardcoded rule is a
+  // that overlaps a hand-tuned region can't un-blur it - a hardcoded rule is a
   // deliberate choice and outranks any inference.
   applySiteRules()
   ensureRestoreButton()
@@ -1015,7 +1015,7 @@ export function setReduceColorVariation(enabled: boolean): boolean {
 // --- Live layout preferences ----------------------------------------------
 // Reduce motion and larger text are user toggles, not analysis results. Both
 // apply instantly to an already-simplified page and need no snapshot beyond
-// what setLargerText() already takes per-element — restoreOriginalPage()
+// what setLargerText() already takes per-element - restoreOriginalPage()
 // clears both along with everything else.
 //
 // These deliberately win over the backend's suggested `layout` block: an
@@ -1030,7 +1030,7 @@ export function isReduceMotionOn(): boolean {
   return document.documentElement.hasAttribute(REDUCE_MOTION_ATTR)
 }
 
-// Returns false when there is no simplified page to apply to — the caller keeps
+// Returns false when there is no simplified page to apply to - the caller keeps
 // the preference stored and it takes effect on the next simplify.
 export function setReduceMotion(enabled: boolean): boolean {
   if (!isSimplificationActive()) return false
@@ -1152,11 +1152,11 @@ let currentSectionIndex = 0
 const HEADING_WRAPPER_TEXT_LIMIT = 150
 
 // Some sites (current Wikipedia included) wrap each top-level section in its own
-// container instead of leaving headings as flat siblings of their content — e.g.
+// container instead of leaving headings as flat siblings of their content - e.g.
 // <section><h2>…</h2><p>…</p></section>. Wikipedia goes one level further and wraps
 // just the heading itself too: <section><div class="mw-heading"><h2>…</h2></div>…</section>.
 // Treat a container as a section wrapper if its first child either IS a heading, or is a
-// short "heading wrapper" div/span (a handful of characters — enough for a heading, edit
+// short "heading wrapper" div/span (a handful of characters - enough for a heading, edit
 // link, anchor) that itself contains one.
 function isSectionWrapper(el: Element): boolean {
   const first = el.firstElementChild
@@ -1170,7 +1170,7 @@ function isHeadingBearing(el: Element): boolean {
   return SECTION_HEADING_SELECTOR.test(el.tagName) || isSectionWrapper(el)
 }
 
-// Article containers are rarely flat — e.g. Wikipedia nests the real content
+// Article containers are rarely flat - e.g. Wikipedia nests the real content
 // several <div> levels below <main>. Descend into whichever child holds the most
 // heading-bearing elements until we land on the level where sections (flat headings
 // or per-section wrapper containers) are direct children.
@@ -1242,7 +1242,7 @@ function isProgressiveRevealActive(): boolean {
 }
 
 // Block-by-block reveal: only the current section is visible. Every other
-// section — before or after — is fully hidden, not faded or peeking.
+// section - before or after - is fully hidden, not faded or peeking.
 function applySectionVisibility(): void {
   sections.forEach((group, index) => {
     group.forEach((el) => {
@@ -1335,7 +1335,7 @@ export function enableProgressiveReveal(): ProgressiveRevealResult {
   const built = buildSections(root)
   const headingSectionCount = built.filter((group) => isHeadingBearing(group[0])).length
 
-  // Too few headings to meaningfully paginate — leave the article fully visible.
+  // Too few headings to meaningfully paginate - leave the article fully visible.
   if (headingSectionCount < 2) {
     sections = []
     return { eligible: false, totalSections: 0, currentIndex: 0 }

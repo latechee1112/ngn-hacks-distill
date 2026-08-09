@@ -206,7 +206,7 @@ export function parseGazeCalibrationFile(raw: string): GazeParseResult {
   const ratio = Math.max(width / window.innerWidth, window.innerWidth / width)
   const warning =
     ratio > 1.25
-      ? `Saved at ${Math.round(width)}x${Math.round(height)}, this window is ${window.innerWidth}x${window.innerHeight} — accuracy may be off.`
+      ? `Saved at ${Math.round(width)}x${Math.round(height)}, this window is ${window.innerWidth}x${window.innerHeight} - accuracy may be off.`
       : undefined
 
   return {

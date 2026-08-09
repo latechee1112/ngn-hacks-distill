@@ -40,7 +40,7 @@ export interface CalibrationProfileResponse {
 }
 
 // chrome.storage.local key the calibration wizard writes to and the content
-// script reads from. Local (not sync) and keyed globally, not per-site —
+// script reads from. Local (not sync) and keyed globally, not per-site -
 // the whole point is that it applies no matter what page you're on.
 export const CALIBRATION_STORAGE_KEY = 'distillCalibrationProfile'
 

@@ -37,8 +37,21 @@ export function dotToNormalizedPoint(dot: CalibrationDot): [number, number] {
   return [dot.xFraction - 0.5, dot.yFraction - 0.5]
 }
 
-// Time to dwell on each dot before registering it.
-export const CALIBRATION_DOT_INTERVAL_MS = 1300
+// Time to dwell on each dot before registering it. 1.8x the original 1300ms:
+// holding each position longer gives the eye room to actually settle and
+// makes the sequence feel less rushed, at the cost of a longer run overall
+// (see the intro copy's stated duration in DotCalibration.tsx, which is
+// derived from this). CALIBRATION_SETTLE_MS below is deliberately NOT scaled
+// with it - that budget covers reaction time and the saccade, which do not
+// get slower just because the dot waits longer; leaving it fixed simply
+// means more of the extra time lands in the capture window.
+export const CALIBRATION_DOT_INTERVAL_MS = 2340
+
+// Travel time for the dot's move-to-next-spot transition (DotCalibration.tsx)
+// and the shockwave that fires on arrival. One constant shared by the CSS
+// transition-duration and the JS arrival-offset math below so they can't
+// drift apart, same as --dwell-ms is shared with CALIBRATION_DOT_INTERVAL_MS.
+export const CALIBRATION_MOVE_MS = 240
 
 // How long after a new dot appears to wait before the capture buffer starts
 // filling - covers reaction time + the saccade to the dot + micro-settle,

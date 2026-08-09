@@ -5,15 +5,15 @@
 // Detection-safety is the whole design constraint here. extractPage() runs
 // synchronously at the start of handleSimplify(), so this element is in the DOM
 // while block detection walks it. Three things keep it out of that walk, and all
-// three are load-bearing — none of the gating code knows this module exists:
+// three are load-bearing - none of the gating code knows this module exists:
 //
-//   1. Custom tag name, no class, no [role] — misses extract.ts's
+//   1. Custom tag name, no class, no [role] - misses extract.ts's
 //      CANDIDATE_SELECTOR entirely, so it is never even a candidate block.
-//   2. display: contents on the host — generates no box, so
+//   2. display: contents on the host - generates no box, so
 //      getBoundingClientRect() is 0x0 and isVisible() is false. That is the
 //      early-out in both of collectNoiseTargets()'s passes, including the
 //      `body > *` sweep that would otherwise match.
-//   3. Shadow DOM — document.querySelectorAll() does not pierce the boundary,
+//   3. Shadow DOM - document.querySelectorAll() does not pierce the boundary,
 //      so the fixed-position layers inside are unreachable from every selector
 //      in extract.ts and simplify.ts.
 //
@@ -47,7 +47,7 @@ const SCAN_HOST_ID = 'distill-scan-layer'
 // on an API that turned out to not reliably exist here.
 
 // Three phases: INTRO plays once (grid wipes in, first beam pass). LOOP
-// repeats indefinitely after that — for as long as the backend call is in
+// repeats indefinitely after that - for as long as the backend call is in
 // flight, however long that turns out to be. OUTRO plays once stop() is
 // called. MIN_VISIBLE_MS floors how soon stop() may start the outro, so a
 // very fast response (cache hit, local fallback) can't cut the intro off
@@ -76,7 +76,7 @@ const REDUCED_MIN_VISIBLE_MS = REDUCED_INTRO_MS + 40
 const REDUCED_HOLD_MS = 200
 
 // Safety net, not the normal path: if stop() can never be called, the layer has
-// to come down on its own. This is deliberately NOT a time limit — analysis has
+// to come down on its own. This is deliberately NOT a time limit - analysis has
 // no fixed upper bound (a 100+ block page against a slow LLM legitimately runs
 // for a minute), and a sweep that quits while work is still in flight tells the
 // user the wrong thing. So the net checks *liveness* instead: the only way the
@@ -109,23 +109,23 @@ const TRAIL_HEIGHT = 160
 
 function prefersReducedMotion(): boolean {
   // Both the OS setting and Distill's own reduce-motion state suppress the
-  // sweep. This is an accessibility tool — a full-viewport moving band is
+  // sweep. This is an accessibility tool - a full-viewport moving band is
   // exactly the kind of motion the setting exists to stop.
   if (document.documentElement.hasAttribute('data-distill-reduce-motion')) return true
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
 // State toggled via classes rather than baking a duration into the CSS text,
-// so the same stylesheet serves the whole intro -> loop -> outro sequence —
+// so the same stylesheet serves the whole intro -> loop -> outro sequence -
 // JS only ever adds/removes 'looping' and 'outro', never regenerates this.
 const STYLE = `
 :host {
-  /* No box, no position — see the note at the top of this file. Belt only:
+  /* No box, no position - see the note at the top of this file. Belt only:
      the load-bearing copy of these declarations lives on host.style (set in
      JS below) as inline !important, since a shadow root's :host rule is just
      an ordinary-specificity author rule from the outer page's point of view
      and can lose to whatever layout rule the host site applies to its own
-     children (e.g. a 'body > *' flex/grid-item rule) — which is exactly what
+     children (e.g. a 'body > *' flex/grid-item rule) - which is exactly what
      let a page's flex layout swallow this element as a real column instead
      of a boxless decoration. Inline style can only be beaten by another
      inline !important, so it is the one guarantee here, not this block. */
@@ -187,14 +187,14 @@ const STYLE = `
   height: ${TRAIL_HEIGHT}px;
   background: linear-gradient(to top, ${TRAIL}, transparent);
 }
-/* After the intro finishes, JS adds .looping — swaps the beam to an
+/* After the intro finishes, JS adds .looping - swaps the beam to an
    indefinitely repeating pass so it keeps signaling work while the request
    is still in flight. */
 .root.looping .beam {
   animation: distill-scan-sweep-loop ${LOOP_MS}ms linear infinite;
 }
 /* prefers-reduced-motion: no positional movement. The grid fades in once and
-   then breathes gently in place — no beam element at all. */
+   then breathes gently in place - no beam element at all. */
 .root.reduced .grid {
   clip-path: inset(0 0 0% 0);
   opacity: 0;
@@ -239,7 +239,7 @@ function removeScanLayer(host: Element): void {
   host.remove()
 }
 
-// Only for hosts no closure owns any more — a layer left behind by a previous
+// Only for hosts no closure owns any more - a layer left behind by a previous
 // content-script instance on this page. The live instance is torn down through
 // `activeSweep` instead, which also stops its timers.
 function removeOrphanScanLayers(): void {
@@ -254,27 +254,27 @@ let activeSweep: (() => void) | null = null
 
 /**
  * Starts the scan sweep and returns a `stop` function. The sweep plays its
- * intro once, then loops indefinitely — call `stop()` when the backend
+ * intro once, then loops indefinitely - call `stop()` when the backend
  * response (or fallback) is ready, and it plays a short outro fade before
  * removing itself. Safe to call repeatedly; an in-flight sweep is torn down
  * and restarted so one Activate press yields exactly one animation.
  *
  * "Indefinitely" is literal: the loop has no time limit and never stops itself
- * because the work is slow. It ends when the caller says the work is done, or —
- * only if the extension context dies and no caller is left to say so — when the
+ * because the work is slow. It ends when the caller says the work is done, or -
+ * only if the extension context dies and no caller is left to say so - when the
  * liveness check notices.
  *
  * Both starting and stopping return immediately. Callers must not await
- * `startScanAnimation()` or let it sequence work — it is decoration running
+ * `startScanAnimation()` or let it sequence work - it is decoration running
  * alongside the real analysis call, never in front of it.
  *
- * `onReveal`, if given, fires exactly once — after the beam's final pass has settled
+ * `onReveal`, if given, fires exactly once - after the beam's final pass has settled
  * and HOLD_MS has held the resolved grid on screen, right as the outro fade starts.
  * That gap is deliberate: it gives the sweep a clean, motionless moment where it
  * visibly reads as "done" before anything underneath it changes, rather than the
  * page transformation and the sweep's own finish landing in the same instant (see
  * REVEAL_ATTR in simplify.ts for why the transformation is gated on this at all).
- * Never fires on a teardown (superseded-by-restart) exit — that page is about to be
+ * Never fires on a teardown (superseded-by-restart) exit - that page is about to be
  * reprocessed by the sweep replacing this one, not shown as-is.
  */
 export function startScanAnimation(onReveal?: () => void): () => void {
@@ -301,7 +301,7 @@ export function startScanAnimation(onReveal?: () => void): () => void {
   // element in mind (a `body > *` flex/grid-item rule, a generic
   // `:not(:defined)` hiding rule, etc). Without this, `display: contents`
   // living only in the shadow root's `:host` block is an ordinary-specificity
-  // author rule from the page's perspective and can lose that cascade — the
+  // author rule from the page's perspective and can lose that cascade - the
   // host then keeps a real box, gets laid out as a flex/grid item alongside
   // the actual content, and squeezes it into a narrow column. `position:
   // static` is set for the same reason: nothing here should ever be able to
@@ -359,7 +359,7 @@ export function startScanAnimation(onReveal?: () => void): () => void {
     }, holdMs)
   }
 
-  // Replacement exit: a new sweep is starting, so this node goes now — an outro
+  // Replacement exit: a new sweep is starting, so this node goes now - an outro
   // would only fade out a layer the user is no longer looking at, and its timer
   // would outlive the instance that scheduled it. Any pending finish() from a
   // stop() call in flight is neutralized by `removed`.
@@ -372,7 +372,7 @@ export function startScanAnimation(onReveal?: () => void): () => void {
   activeSweep = teardown
 
   // Enter the loop once the intro's own animation has actually finished
-  // playing — not tied to stop(), so the loop starts even if the caller
+  // playing - not tied to stop(), so the loop starts even if the caller
   // takes a while to stop() it.
   const introTimer = window.setTimeout(() => {
     if (!removed) root.classList.add('looping')

@@ -12,7 +12,7 @@ async function getActiveTabId(): Promise<number | null> {
 
 // Tabs that were already open when the extension was installed or reloaded
 // never got the manifest's content script, so messaging them fails with
-// "Receiving end does not exist". Inject it once, on demand, and retry — the
+// "Receiving end does not exist". Inject it once, on demand, and retry - the
 // injection only happens after a failed ping, so a tab that already has the
 // script never gets a second copy (and a second message listener).
 async function sendToTab<T>(tabId: number, message: unknown): Promise<T> {
@@ -34,7 +34,7 @@ const FOCUS_RING =
 // picking its own surface treatment: translucent fill + backdrop blur + a hairline
 // border, uniform on all four sides. No gradients, no glow, no per-button variation
 // beyond the tint. (An earlier version added an inset top highlight on top of this
-// same border — the two overlapped only along the top edge, so it read as visibly
+// same border - the two overlapped only along the top edge, so it read as visibly
 // thicker there than the other three sides. Left out for that reason.) GLASS carries
 // the shared mechanics; each variant below only supplies the tint and its hover state.
 const GLASS = 'backdrop-blur-md backdrop-saturate-150 border transition-colors'
@@ -134,7 +134,7 @@ function App() {
   const [resolvedProfile, setResolvedProfile] = useState<ResolvedProfile | null>(null)
 
   // Shown until the user either finishes or explicitly dismisses the
-  // calibration wizard (src/calibration/App.tsx) — starts hidden so it
+  // calibration wizard (src/calibration/App.tsx) - starts hidden so it
   // doesn't flash on before the storage check below resolves.
   const [showCalibrationBanner, setShowCalibrationBanner] = useState(false)
   async function checkCalibrationStatus() {
@@ -152,7 +152,7 @@ function App() {
       const record: StoredCalibration = { dismissed: true }
       await chrome.storage.local.set({ [CALIBRATION_STORAGE_KEY]: record })
     } catch {
-      // Best-effort — worst case the banner reappears next open.
+      // Best-effort - worst case the banner reappears next open.
     }
   }
 
@@ -174,7 +174,7 @@ function App() {
       setAdsHidden(response.adsHidden ?? 0)
       setProgressiveRevealAvailable(response.progressiveRevealAvailable)
       setProgressiveRevealActive(response.progressiveRevealActive)
-      // Only trust the page for these live preferences while it is actually simplified —
+      // Only trust the page for these live preferences while it is actually simplified -
       // an unsimplified page has both cleared, which says nothing about what
       // the user prefers next time.
       if (response.simplified) {
@@ -277,7 +277,7 @@ function App() {
 
   // Reduce motion and Larger text are CSS switches, so they apply to an
   // already-simplified page immediately. When nothing is simplified yet the
-  // content script reports applied:false and we just keep the preference —
+  // content script reports applied:false and we just keep the preference -
   // it ships with the next Activate.
   async function pushLayoutPreference(
     type: 'DISTILL_SET_REDUCE_MOTION' | 'DISTILL_SET_LARGER_TEXT',
@@ -304,7 +304,7 @@ function App() {
     pushLayoutPreference('DISTILL_SET_LARGER_TEXT', enabled)
   }
 
-  // Blur is a CSS variable on the page, so a drag repaints immediately — no
+  // Blur is a CSS variable on the page, so a drag repaints immediately - no
   // re-analysis, nothing to wait for. Fired on every change event; each message
   // is a single custom-property write, which is cheap enough to keep up with
   // the slider.
@@ -359,7 +359,7 @@ function App() {
       })) as { applied: boolean; active: boolean }
       setProgressiveRevealActive(response.active)
       if (enabled && !response.applied) {
-        setError('Not enough sections to paginate — showing full article.')
+        setError('Not enough sections to paginate - showing full article.')
       }
     } catch (err) {
       setError(`Couldn't toggle progressive reveal: ${String(err)}`)
@@ -419,20 +419,24 @@ function App() {
             onClick={simplified ? restorePage : simplifyPage}
             disabled={analyzing}
             aria-busy={analyzing}
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-body font-medium ${FOCUS_RING} ${analyzing ? `cursor-wait ${GLASS_SECONDARY} text-on-surface-variant` : `${GLASS_ACCENT} text-accent-fg`
-              }`}
+            className={`relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-md px-4 py-2 text-body font-medium ${FOCUS_RING} ${analyzing ? `cursor-wait ${GLASS_SECONDARY} text-on-surface-variant` : `${GLASS_ACCENT} text-accent-fg`
+              } ${!analyzing && !simplified ? 'simplify-shimmer' : ''}`}
           >
-            {analyzing ? (
-              <>
-                <Icon name="spinner" className="animate-spin text-accent-text" />
-                Simplifying…
-              </>
-            ) : (
-              <>
-                <Icon name={simplified ? 'restore' : 'layers'} />
-                {simplified ? 'Show Original Page' : 'Simplify Current Page'}
-              </>
-            )}
+            {/* z-10 so the sweep (the button's own ::after) passes behind the
+                label instead of over it. */}
+            <span className="relative z-10 flex items-center gap-2">
+              {analyzing ? (
+                <>
+                  <Icon name="spinner" className="animate-spin text-accent-text" />
+                  Simplifying…
+                </>
+              ) : (
+                <>
+                  <Icon name={simplified ? 'restore' : 'layers'} />
+                  {simplified ? 'Show Original Page' : 'Simplify Current Page'}
+                </>
+              )}
+            </span>
           </button>
           <button
             type="button"
@@ -456,7 +460,7 @@ function App() {
 
         {/* Every value here is read off the profile that will actually be used
             (resolveProfile(), shared with the content script). Rendered only
-            once resolved — a card that guesses while loading would flash the
+            once resolved - a card that guesses while loading would flash the
             wrong profile name, which is the exact failure this replaced. */}
         {resolvedProfile && (
           <div className="rounded-md border border-outline bg-surface p-4">
@@ -473,7 +477,7 @@ function App() {
             )}
             {resolvedProfile.origin === 'default' && (
               <p className="mt-2 text-meta text-on-surface-muted">
-                Calibrate, or just keep browsing — Distill builds a profile from how you read.
+                Calibrate, or just keep browsing - Distill builds a profile from how you read.
               </p>
             )}
           </div>
@@ -483,15 +487,26 @@ function App() {
           <h2 className="mb-2 text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">
             Simplification Controls
           </h2>
-          <div className="overflow-hidden rounded-md border border-outline bg-surface">
+          {/* Every control here repaints the live page - there is nothing to
+              repaint before Simplify Current Page has run, so the whole group
+              is inert until then rather than quietly storing preferences a
+              user reasonably expects to see take effect immediately. */}
+          <div
+            className={`overflow-hidden rounded-md border border-outline bg-surface ${
+              simplified ? '' : 'opacity-50'
+            }`}
+          >
             <div className="border-b border-outline p-4">
               <div className="mb-3 flex items-center justify-between">
-                <label htmlFor="distill-blur-intensity" className="text-body font-medium text-on-surface">
+                <label
+                  htmlFor="distill-blur-intensity"
+                  className={`text-body font-medium text-on-surface ${simplified ? '' : 'cursor-not-allowed'}`}
+                >
                   Blur intensity
                 </label>
                 <span className="text-meta tabular-nums text-on-surface-variant">{intensity}%</span>
               </div>
-              {/* Applies live on drag — it drives a CSS variable on the page, so
+              {/* Applies live on drag - it drives a CSS variable on the page, so
                   there is nothing to re-run and nothing to warn about. */}
               <input
                 id="distill-blur-intensity"
@@ -499,31 +514,39 @@ function App() {
                 min={1}
                 max={100}
                 value={intensity}
+                disabled={!simplified}
                 onChange={(e) => changeBlurIntensity(Number(e.target.value))}
+                className="disabled:cursor-not-allowed"
               />
             </div>
 
             <div className="flex flex-col">
               <label
-                className="flex cursor-pointer items-center justify-between border-b border-outline px-4 py-3 transition-colors hover:bg-surface-hover focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset"
+                className={`flex items-center justify-between border-b border-outline px-4 py-3 transition-colors focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset ${
+                  simplified ? 'cursor-pointer hover:bg-surface-hover' : 'cursor-not-allowed'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon name="pulse" className="text-on-surface-variant" />
                   <span className="text-body text-on-surface">Reduce motion</span>
                 </div>
-                <ToggleSwitch checked={reduceMotion} onChange={toggleReduceMotion} />
+                <ToggleSwitch checked={reduceMotion} disabled={!simplified} onChange={toggleReduceMotion} />
               </label>
               <label
-                className="flex cursor-pointer items-center justify-between border-b border-outline px-4 py-3 transition-colors hover:bg-surface-hover focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset"
+                className={`flex items-center justify-between border-b border-outline px-4 py-3 transition-colors focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset ${
+                  simplified ? 'cursor-pointer hover:bg-surface-hover' : 'cursor-not-allowed'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon name="textSize" className="text-on-surface-variant" />
                   <span className="text-body text-on-surface">Larger text</span>
                 </div>
-                <ToggleSwitch checked={largerText} onChange={toggleLargerText} />
+                <ToggleSwitch checked={largerText} disabled={!simplified} onChange={toggleLargerText} />
               </label>
               <label
-                className="flex cursor-pointer items-center justify-between border-b border-outline px-4 py-3 transition-colors hover:bg-surface-hover focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset"
+                className={`flex items-center justify-between border-b border-outline px-4 py-3 transition-colors focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset ${
+                  simplified && progressiveRevealAvailable ? 'cursor-pointer hover:bg-surface-hover' : 'cursor-not-allowed'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon name="eye" className="text-on-surface-variant" />
@@ -531,21 +554,20 @@ function App() {
                 </div>
                 <ToggleSwitch
                   checked={progressiveRevealActive}
-                  disabled={!progressiveRevealAvailable}
+                  disabled={!simplified || !progressiveRevealAvailable}
                   onChange={toggleProgressiveReveal}
                 />
               </label>
               <label
-                className="flex cursor-pointer items-center justify-between px-4 py-3 transition-colors hover:bg-surface-hover focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset"
+                className={`flex items-center justify-between px-4 py-3 transition-colors focus-within:ring-2 focus-within:ring-on-surface-variant focus-within:ring-inset ${
+                  simplified ? 'cursor-pointer hover:bg-surface-hover' : 'cursor-not-allowed'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon name="droplet" className="text-on-surface-variant" />
                   <span className="text-body text-on-surface">Reduce color variation</span>
                 </div>
-                <ToggleSwitch
-                  checked={colorReductionActive}
-                  onChange={toggleColorReduction}
-                />
+                <ToggleSwitch checked={colorReductionActive} disabled={!simplified} onChange={toggleColorReduction} />
               </label>
             </div>
           </div>

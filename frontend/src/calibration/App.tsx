@@ -20,10 +20,13 @@ import {
 import DotCalibration from './gaze/DotCalibration'
 import { currentTargetRect, isOnTarget, toPagePoint, type PageGazePoint } from './gaze/hitTest'
 import { GAZE_VIDEO_ID, useGazeTracker } from './gaze/useGazeTracker'
+import NameScreen from './NameScreen'
 import TrialTask from './TrialTask'
 import { PRACTICE_TRIAL, TRIALS } from './trials'
+import { PrimaryButton, QuietButton, Reveal, SecondaryButton, Shell } from './ui'
+import WelcomeScreen from './WelcomeScreen'
 
-// Local dev backend — same origin the background service worker's
+// Local dev backend - same origin the background service worker's
 // analyze-page calls use. Unlike a content script, this page runs at the
 // extension's own chrome-extension:// origin, which is already on the
 // backend's CORS allowlist (see backend/.env's CORS_ORIGINS), so it can
@@ -36,7 +39,7 @@ async function markDismissed() {
     const record: StoredCalibration = { dismissed: true }
     await chrome.storage.local.set({ [CALIBRATION_STORAGE_KEY]: record })
   } catch {
-    // Best-effort — worst case the popup's "Finish setup" banner reappears.
+    // Best-effort - worst case the popup's "Finish setup" banner reappears.
   }
 }
 
@@ -54,11 +57,9 @@ async function storeResult(response: CalibrationProfileResponse, userName: strin
   await chrome.storage.local.set({ [CALIBRATION_STORAGE_KEY]: record })
 }
 
-const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-surface-variant focus-visible:ring-offset-2 focus-visible:ring-offset-background'
-
 type Step =
   | 'welcome'
+  | 'name'
   | 'camera'
   | 'gazeCalibration'
   | 'practice'
@@ -68,73 +69,12 @@ type Step =
   | 'error'
   | 'skipped'
 
-function PrimaryButton({
-  onClick,
-  children,
-  disabled,
-}: {
-  onClick: () => void
-  children: React.ReactNode
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-md bg-accent px-6 py-3 text-body font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:cursor-wait disabled:opacity-60 ${FOCUS_RING}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md border border-outline bg-surface px-6 py-3 text-body font-medium text-on-surface transition-colors hover:bg-surface-hover ${FOCUS_RING}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function Shell({
-  children,
-  showGlow = false,
-  wide = false,
-}: {
-  children: React.ReactNode
-  showGlow?: boolean
-  // The task screens need more room than the reading screens: the spacing
-  // trial's grid is 5 x 64px + 4 x 48px = 512px, exactly max-w-lg, which
-  // would leave it wedged edge-to-edge with no breathing room at all. Prose
-  // steps keep the narrower measure, which is easier to read.
-  wide?: boolean
-}) {
-  return (
-    <div className="relative isolate flex min-h-screen flex-col items-center justify-center gap-8 overflow-hidden bg-background px-6 py-16 text-center">
-      {showGlow && (
-        <>
-          <div className="bg-glow bg-glow-top" aria-hidden="true" />
-          <div className="bg-glow bg-glow-bottom" aria-hidden="true" />
-        </>
-      )}
-      <div className="relative z-10 flex items-center gap-2 text-on-surface-variant">
-        <Icon name="funnel" />
-        <span className="text-meta font-semibold tracking-[0.08em] uppercase">Distill</span>
-      </div>
-      <div className={`relative z-10 flex w-full flex-col items-center gap-6 ${wide ? 'max-w-3xl' : 'max-w-lg'}`}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
 function App() {
   const [step, setStep] = useState<Step>('welcome')
+  // Which way the wizard last moved, so the step transition can animate in
+  // from the matching side (see .step-enter in index.css). Only 'name' can
+  // currently go backwards; the rest of the flow is one-way by design.
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [trialIndex, setTrialIndex] = useState(0)
   const [trials, setTrials] = useState<CalibrationTrial[]>([])
   const [result, setResult] = useState<CalibrationProfileResponse | null>(null)
@@ -333,18 +273,25 @@ function App() {
 
   const tracker = useGazeTracker(handleGazeSample)
 
+  // Every navigation goes through here so `direction` can never fall out of
+  // sync with the step it is meant to describe.
+  function go(next: Step, dir: 'forward' | 'back' = 'forward') {
+    setDirection(dir)
+    setStep(next)
+  }
+
   function handleSkip() {
     markDismissed()
-    setStep('skipped')
+    go('skipped')
   }
 
   function enableCamera() {
-    setStep('gazeCalibration')
+    go('gazeCalibration')
   }
 
   function handleGazeCalibrationDone() {
     gazeEnabledRef.current = true
-    setStep('practice')
+    go('practice')
   }
 
   // The practice run's own CalibrationTrial is discarded, never added to
@@ -355,7 +302,7 @@ function App() {
   function handlePracticeComplete() {
     gazeSamplesRef.current = []
     trialStartRef.current = performance.now()
-    setStep('trials')
+    go('trials')
   }
 
   // A correct trial click is a free, known (position, was-looking-here)
@@ -385,7 +332,7 @@ function App() {
     console.warn('[Distill] gaze calibration failed, continuing without camera:', message)
     tracker.stop()
     gazeEnabledRef.current = false
-    setStep('practice')
+    go('practice')
   }
 
   function handleTrialComplete(outcome: CalibrationTrial) {
@@ -456,7 +403,7 @@ function App() {
     setImportError('')
     const parsed = parseCalibrationFile(await picked.text())
     if (!parsed.ok) {
-      setImportError(`Couldn't load that file — ${parsed.error}.`)
+      setImportError(`Couldn't load that file - ${parsed.error}.`)
       return
     }
 
@@ -492,7 +439,7 @@ function App() {
     const matrix = tracker.getGazeCorrection() ?? fitAffine(pairs)
     if (!matrix) {
       setGazeSaveNote(
-        `Couldn't fit a mapping from ${pairs.length} point${pairs.length === 1 ? '' : 's'} — redo the dots with your face in frame.`,
+        `Couldn't fit a mapping from ${pairs.length} point${pairs.length === 1 ? '' : 's'} - redo the dots with your face in frame.`,
       )
       return
     }
@@ -504,7 +451,7 @@ function App() {
     const meanError = residualError(matrix, pairs)
     setGazeSaveNote(
       `Saved ${pairs.length} points · mean error ${(meanError * 100).toFixed(1)}% of the viewport${
-        meanError > 0.12 ? ' — high, consider redoing the dots' : ''
+        meanError > 0.12 ? ' - high, consider redoing the dots' : ''
       }.`,
     )
   }
@@ -518,70 +465,48 @@ function App() {
   function renderStep() {
   if (step === 'welcome') {
     return (
-      <Shell showGlow>
-        <h1 className="text-title font-semibold text-on-background">Let's set up Distill for you</h1>
-        <p className="text-body text-on-surface-variant">
-          A few quick tasks (about a minute) tell Distill how you scan a page, so it can pick spacing, contrast,
-          and motion settings that actually work for you — instead of one-size-fits-all defaults.
-        </p>
-        {/* Optional, and deliberately only a label: the profile card in the
-            extension popup says whose profile is loaded, and "Calibrated to
-            Sam" reads as yours in a way "Calibrated profile" does not. Nothing
-            downstream branches on it. */}
-        <div className="flex w-full max-w-sm flex-col gap-1.5 text-left">
-          <label htmlFor="distill-user-name" className="text-meta font-medium text-on-surface-variant">
-            What should we call you? <span className="font-normal">(optional)</span>
-          </label>
-          <input
-            id="distill-user-name"
-            type="text"
-            value={userName}
-            maxLength={USER_NAME_MAX_LENGTH}
-            placeholder="Your name"
-            autoComplete="given-name"
-            onChange={(e) => setUserName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setStep('camera')
-            }}
-            className={`w-full rounded-md border border-outline bg-surface px-3 py-2 text-body text-on-surface placeholder:text-on-surface-muted ${FOCUS_RING}`}
-          />
-        </div>
-        <div className="flex gap-3">
-          <PrimaryButton onClick={() => setStep('camera')}>Get started</PrimaryButton>
-          <SecondaryButton onClick={handleSkip}>Skip for now</SecondaryButton>
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
-          >
-            <Icon name="upload" />
-            Load a saved profile
-          </button>
-          {importError && (
-            <p role="alert" className="max-w-sm text-meta text-danger-text">
-              {importError}
-            </p>
-          )}
-        </div>
-      </Shell>
+      <WelcomeScreen
+        onStart={() => go('name')}
+        onSkip={handleSkip}
+        onLoadProfile={() => fileInputRef.current?.click()}
+        importError={importError}
+        direction={direction}
+      />
+    )
+  }
+
+  if (step === 'name') {
+    return (
+      <NameScreen
+        userName={userName}
+        onUserNameChange={setUserName}
+        onContinue={() => go('camera')}
+        onBack={() => go('welcome', 'back')}
+      />
     )
   }
 
   if (step === 'camera') {
     return (
-      <Shell showGlow>
-        <h1 className="text-title font-semibold text-on-background">One optional step</h1>
-        <p className="text-body text-on-surface-variant">
-          Distill can use your camera to see where you're looking during the tasks below, which makes the result
-          more specific to you — for example, noticing if your attention keeps drifting to distracting elements.
-          Nothing is ever recorded or sent anywhere; it's only used live, on this page, to score the tasks.
-        </p>
-        <div className="flex gap-3">
-          <PrimaryButton onClick={enableCamera}>Enable camera</PrimaryButton>
-          <SecondaryButton onClick={() => setStep('practice')}>Skip — continue without camera</SecondaryButton>
-        </div>
+      <Shell showGlow animKey="camera" direction={direction} progress={1}>
+        <Reveal delay={0}>
+          <h1 className="hero-title text-display font-semibold">
+            {userName.trim() ? `${userName.trim()}, one optional step` : 'One optional step'}
+          </h1>
+        </Reveal>
+        <Reveal delay={80}>
+          <p className="text-body text-on-surface-variant">
+            Distill can use your camera to see where you're looking during the tasks below, which makes the result
+            more specific to you - for example, noticing if your attention keeps drifting to distracting elements.
+            Nothing is ever recorded or sent anywhere; it's only used live, on this page, to score the tasks.
+          </p>
+        </Reveal>
+        <Reveal delay={160}>
+          <div className="flex flex-wrap justify-center gap-3">
+            <PrimaryButton onClick={enableCamera}>Enable camera</PrimaryButton>
+            <SecondaryButton onClick={() => go('practice')}>Skip - continue without camera</SecondaryButton>
+          </div>
+        </Reveal>
       </Shell>
     )
   }
@@ -598,11 +523,11 @@ function App() {
 
   if (step === 'practice') {
     return (
-      <Shell wide>
+      <Shell wide animKey="practice" direction={direction} progress={3}>
         <p className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">Practice</p>
         <h1 className="text-title font-semibold text-on-background">Let's try one first</h1>
         <p className="max-w-md text-body text-on-surface-variant">
-          This one isn't scored — it's just so the real tasks aren't the first time you've seen this. Take as long
+          This one isn't scored - it's just so the real tasks aren't the first time you've seen this. Take as long
           as you like.
         </p>
         <TrialTask
@@ -618,14 +543,10 @@ function App() {
             file, since re-saving it would just round-trip the same numbers. */}
         {gazeEnabledRef.current && !tracker.isCorrectionFromFile() && (
           <div className="flex flex-col items-center gap-2 border-t border-outline pt-4">
-            <button
-              type="button"
-              onClick={handleSaveGazeCalibration}
-              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-meta text-on-surface-muted transition-colors hover:text-on-surface-variant ${FOCUS_RING}`}
-            >
+            <QuietButton onClick={handleSaveGazeCalibration}>
               <Icon name="download" />
               Save this eye calibration
-            </button>
+            </QuietButton>
             {gazeSaveNote && <p className="max-w-sm text-meta text-on-surface-variant">{gazeSaveNote}</p>}
           </div>
         )}
@@ -635,9 +556,11 @@ function App() {
 
   if (step === 'trials') {
     return (
-      <Shell wide>
+      // Keyed per trial, not just per step, so each new task slides in the
+      // same way every other screen change does.
+      <Shell wide animKey={`trial-${trialIndex}`} direction="forward" progress={4}>
         <p className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">
-          Step {trialIndex + 1} of {TRIALS.length}
+          Task {trialIndex + 1} of {TRIALS.length}
         </p>
         <TrialTask
           key={TRIALS[trialIndex].id}
@@ -651,7 +574,7 @@ function App() {
 
   if (step === 'submitting') {
     return (
-      <Shell>
+      <Shell animKey="submitting">
         <Icon name="spinner" className="h-6 w-6 animate-spin text-accent-text" />
         <p className="text-body text-on-surface-variant">Analyzing your results…</p>
       </Shell>
@@ -660,11 +583,11 @@ function App() {
 
   if (step === 'error') {
     return (
-      <Shell>
+      <Shell animKey="error">
         <h1 className="text-title font-semibold text-on-background">Couldn't reach Distill's backend</h1>
         <p className="text-meta text-danger-text">{error}</p>
         <p className="text-body text-on-surface-variant">
-          Make sure the backend is running, or skip for now — you can redo this anytime.
+          Make sure the backend is running, or skip for now - you can redo this anytime.
         </p>
         <div className="flex gap-3">
           <PrimaryButton onClick={retrySubmit}>Try again</PrimaryButton>
@@ -676,10 +599,10 @@ function App() {
 
   if (step === 'skipped') {
     return (
-      <Shell>
-        <h1 className="text-title font-semibold text-on-background">No problem</h1>
+      <Shell showGlow animKey="skipped">
+        <h1 className="hero-title text-display font-semibold">No problem</h1>
         <p className="text-body text-on-surface-variant">
-          Distill will use sensible defaults. You can close this tab — the "Finish setup" reminder in the extension
+          Distill will use sensible defaults. You can close this tab - the "Finish setup" reminder in the extension
           popup will bring you back here anytime.
         </p>
         <PrimaryButton onClick={() => window.close()}>Close this tab</PrimaryButton>
@@ -689,23 +612,34 @@ function App() {
 
   // results
   return (
-    <Shell>
-      <div className="flex items-center gap-2 text-accent-text">
-        <Icon name="check" />
-        <h1 className="text-title font-semibold text-on-background">
-          {importedFromFile ? 'Calibration loaded' : "You're all set"}
-        </h1>
-      </div>
+    <Shell showGlow animKey="results">
+      <Reveal delay={0}>
+        <div className="flex items-center gap-2 text-accent-text">
+          <Icon name="check" />
+          <h1 className="hero-title text-display font-semibold">
+            {importedFromFile
+              ? 'Calibration loaded'
+              : userName.trim()
+                ? `You're all set, ${userName.trim()}`
+                : "You're all set"}
+          </h1>
+        </div>
+      </Reveal>
       {importedFromFile && (
-        <p className="text-body text-on-surface-variant">
-          Restored from a saved file — the tasks were skipped.
-        </p>
+        <Reveal delay={60}>
+          <p className="text-body text-on-surface-variant">
+            Restored from a saved file - the tasks were skipped.
+          </p>
+        </Reveal>
       )}
       <ul className="flex w-full flex-col gap-2 text-left">
-        {result?.explanation.map((line) => (
+        {/* The stagger is applied to the <li> directly rather than through
+            <Reveal>, whose wrapper <div> would not be a valid child of <ul>. */}
+        {result?.explanation.map((line, i) => (
           <li
             key={line}
-            className="rounded-md border border-outline bg-surface px-4 py-3 text-body text-on-surface"
+            style={{ '--delay': `${120 + i * 70}ms` } as React.CSSProperties}
+            className="reveal rounded-md border border-outline bg-surface px-4 py-3 text-body text-on-surface"
           >
             {line}
           </li>
@@ -713,14 +647,10 @@ function App() {
       </ul>
       <div className="flex flex-col items-center gap-3">
         <PrimaryButton onClick={() => window.close()}>Close this tab</PrimaryButton>
-        <button
-          type="button"
-          onClick={handleSaveCalibrationFile}
-          className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
-        >
+        <QuietButton onClick={handleSaveCalibrationFile}>
           <Icon name="download" />
           Save profile file
-        </button>
+        </QuietButton>
         <p className="max-w-sm text-meta text-on-surface-muted">
           Saves the finished profile as a .json you can load from the first screen to skip the whole wizard. Separate
           from the eye calibration file, which only stores the gaze mapping and still runs the tasks.

@@ -2,14 +2,14 @@
 // rules that turn accumulated browsing counters into a VisualProfile.
 //
 // Split out of content/usageTracker.ts so this can be imported by pages that
-// have no DOM to observe — the popup reads a profile to *display* it, and must
+// have no DOM to observe - the popup reads a profile to *display* it, and must
 // not pull the content script's collection machinery (and its dom-heuristics
 // dependency) into its bundle to do that. Collection lives in usageTracker.ts;
 // everything here is pure apart from the two chrome.storage calls.
 //
-// The calibration wizard measures the same three things this does — how much
+// The calibration wizard measures the same three things this does - how much
 // clutter costs you, where your attention leaks to, and whether you read or
-// skim — just under controlled conditions with synthetic decoys. So the rules
+// skim - just under controlled conditions with synthetic decoys. So the rules
 // below deliberately mirror backend/services/profile_rules.py: a distractor
 // gate, an attention-leak gate, and a skim gate, each with its own explanation
 // string. Nothing here is a model; every field traces to a counter and a
@@ -37,7 +37,7 @@ export interface UsageSignals {
   glanceCount: number
   readCount: number
   clickCount: number
-  // Clicks that landed on an ad, a rail, a sticky promo or nav — the in-the-wild
+  // Clicks that landed on an ad, a rail, a sticky promo or nav - the in-the-wild
   // equivalent of the calibration wizard's decoy sidebar/ad.
   distractorClickCount: number
 }
@@ -53,7 +53,7 @@ export const EMPTY_SIGNALS: UsageSignals = {
   distractorClickCount: 0,
 }
 
-// Below this, the ratios are noise and deriveUsageProfile() returns null — the
+// Below this, the ratios are noise and deriveUsageProfile() returns null - the
 // caller then falls back to DEFAULT_PROFILE. Roughly a few minutes of browsing.
 export const MIN_INTERACTIONS = 25
 
@@ -63,7 +63,7 @@ const DISTRACTOR_CLICK_RATIO = 0.25
 // Attention leaking to furniture. Softer evidence than a click (you can look at
 // a rail without it costing you anything), so it only adds strength.
 const PERIPHERAL_DWELL_RATIO = 0.35
-// Mostly glancing rather than reading — progressive reveal is for this user.
+// Mostly glancing rather than reading - progressive reveal is for this user.
 const GLANCE_RATIO = 0.6
 
 export async function loadUsageSignals(): Promise<UsageSignals> {
@@ -124,7 +124,7 @@ export function deriveUsageProfile(signals: UsageSignals): UsageProfileResult | 
   }
   if (skims) {
     explanation.push(
-      `${Math.round(glanceRatio * 100)}% of sections were scrolled past rather than read — revealing content a section at a time.`,
+      `${Math.round(glanceRatio * 100)}% of sections were scrolled past rather than read - revealing content a section at a time.`,
     )
   }
   if (explanation.length === 0) {

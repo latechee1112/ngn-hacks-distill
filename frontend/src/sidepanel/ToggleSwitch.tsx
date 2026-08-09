@@ -20,7 +20,7 @@ const DOT_TRANSLATE = {
   md: 'translate-x-4',
 }
 
-// When onChange is omitted the switch renders but does nothing on click —
+// When onChange is omitted the switch renders but does nothing on click -
 // used for controls that aren't wired up to real functionality yet.
 function ToggleSwitch({ checked, onChange, disabled, size = 'sm' }: ToggleSwitchProps) {
   const interactive = !!onChange && !disabled

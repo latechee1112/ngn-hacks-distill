@@ -27,7 +27,7 @@ export const HARD_BLUR_CLASS = 'distill-hard-blur'
 
 export interface SiteRule {
   name: string
-  // Matches against window.location — both parts must pass.
+  // Matches against window.location - both parts must pass.
   hostPattern: RegExp
   pathPattern: RegExp
   // Extra guard for pages the URL alone can't distinguish (e.g. /software/search
@@ -40,7 +40,7 @@ export interface SiteRule {
   // AccuWeather's generic paragraph whose bracket-wrapped text is the only identifier.
   blurMatcher?: () => Element[]
   // Elements that must stay sharp and clickable. A CSS filter on an ancestor blurs
-  // its whole subtree and a child cannot opt out, so this can't be a style rule — it
+  // its whole subtree and a child cannot opt out, so this can't be a style rule - it
   // clears the blur classes off each match's ancestor chain instead. blurSelectors
   // therefore has to name the *siblings* to blur, not a container; these are the
   // backstop against a container getting blurred by one of the generic passes.
@@ -54,7 +54,7 @@ export interface SiteRule {
   keepSharpMatcher?: () => Element[]
   // Roots to scale up by TEXT_BOOST_SCALE, e.g. Wikipedia's article body once its own
   // reading-preference panel (which offers the same text-size choice) is blurred away.
-  // A flat em multiplier on the root is enough here — unlike the generic pixel-based
+  // A flat em multiplier on the root is enough here - unlike the generic pixel-based
   // scan in simplify.ts's setLargerText(), which has to cope with arbitrary sites'
   // nested em/rem quirks, a single hand-picked site has predictable, well-behaved CSS
   // where child headings scaling proportionally off a larger parent em is the point,
@@ -67,9 +67,9 @@ export interface SiteRule {
 const TEXT_BOOST_SCALE = 1.2
 
 // --- Devpost project pages -------------------------------------------------
-// https://devpost.com/software/<slug>. Blurs the comparison/status surface — likes,
+// https://devpost.com/software/<slug>. Blurs the comparison/status surface - likes,
 // comment counts, the Story/Updates tabs, the "Submitted to" award panel, the team
-// roster, and the bottom like bar with its "N people like this" faces — leaving the
+// roster, and the bottom like bar with its "N people like this" faces - leaving the
 // title, the gallery and the actual project write-up sharp.
 const DEVPOST_PROJECT: SiteRule = {
   name: 'devpost-project',
@@ -79,7 +79,7 @@ const DEVPOST_PROJECT: SiteRule = {
   // A real project page is the only one with the project header on it.
   confirm: () => !!document.getElementById('software-header'),
   blurSelectors: [
-    // Site chrome across the top — the menus, search and account controls, but not
+    // Site chrome across the top - the menus, search and account controls, but not
     // the title area holding the Devpost logo. :not(.title-area) is for the mobile
     // bar, whose logo <ul> carries both classes.
     '#global-nav .top-bar-section:not(.title-area)',
@@ -113,8 +113,8 @@ const DEVPOST_PROJECT: SiteRule = {
 // --- AccuWeather articles ---------------------------------------------------
 // https://www.accuweather.com/en/<section>/<slug>/<id>. AccuWeather writes its own
 // "further reading" citations inline in the article body as a bracket-wrapped
-// sentence — e.g. "[More wildfire coverage: <a>Before-and-after images...</a> |
-// <a>Check your local air quality</a>]" — with no distinguishing class name, just a
+// sentence - e.g. "[More wildfire coverage: <a>Before-and-after images...</a> |
+// <a>Check your local air quality</a>]" - with no distinguishing class name, just a
 // <p class="paragraph-block"> whose text starts with "[" and ends with "]".
 // There is no reliable CSS selector for "starts with [", so this is hardcoded with
 // a text matcher and deliberately sent through the hard-blur path.
@@ -195,7 +195,7 @@ export function applySiteRules(): number {
 
   // Several selectors deliberately overlap (the comment composer is matched by both a
   // wrapper rule and the bare `form` fallback). CSS filters compound, so a target
-  // inside another target would come out blurred twice as hard — keep only the
+  // inside another target would come out blurred twice as hard - keep only the
   // outermost of each nest.
   const targets = Array.from(matched).filter(
     (el) => !Array.from(matched).some((other) => other !== el && other.contains(el)),
@@ -216,7 +216,7 @@ export function applySiteRules(): number {
   return targets.length
 }
 
-// Flat em multiplier on each root — cheap, and correct for a hand-picked site whose
+// Flat em multiplier on each root - cheap, and correct for a hand-picked site whose
 // own CSS already scales nested headings proportionally off their parent's font-size.
 function boostText(rule: SiteRule): void {
   rule.boostTextSelectors?.forEach((selector) => {
@@ -231,7 +231,7 @@ function boostText(rule: SiteRule): void {
 // Every class that can make an ancestor take its subtree down with it: the two blurs,
 // display:none from a backend 'collapse', display:none from the ad pass, and the
 // unstick rules that reposition a bar out from under the content. Blur was not enough
-// on its own — the top bar kept disappearing outright because the backend collapses
+// on its own - the top bar kept disappearing outright because the backend collapses
 // site navigation at a high intensity, and clearing only the blur left it hidden.
 const SUPPRESSION_CLASSES = [
   HARD_BLUR_CLASS,
@@ -243,7 +243,7 @@ const SUPPRESSION_CLASSES = [
 ]
 
 // Walks up from each keep-sharp element clearing those classes off the ancestor chain,
-// so nothing above it can blur or hide it by inheritance — whether that came from our
+// so nothing above it can blur or hide it by inheritance - whether that came from our
 // own selectors, the generic secondary pass (which sees #global-nav as a nav), or a
 // backend deemphasize/collapse. Runs after the blur pass, and applySiteRules() itself
 // runs last in both simplify paths, so this is the final word.

@@ -1,6 +1,6 @@
 // Snapshots className/inline-style before Distill touches an element, so any transform
 // (local rules here, or backend TransformationActions later) can be undone exactly.
-// Nodes are never removed — only class/style are ever mutated — so restoring these two
+// Nodes are never removed - only class/style are ever mutated - so restoring these two
 // values is always sufficient to put the page back exactly as it was.
 
 interface OriginalSnapshot {
@@ -38,7 +38,7 @@ export function hasSavedOriginals(): boolean {
 
 // A Map holds its keys strongly, so every element ever snapshotted stays reachable
 // until restore clears the map. That is fine for a static page, but a virtualized
-// feed recycles cards continuously — the ad observer snapshots each new one — and
+// feed recycles cards continuously - the ad observer snapshots each new one - and
 // the map would pin every removed node for the lifetime of the page. Elements no
 // longer in the document can never be restored anyway, so dropping them costs
 // nothing. Called from the observer's rescan, where the churn actually happens.

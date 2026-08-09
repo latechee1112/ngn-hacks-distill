@@ -1,5 +1,5 @@
 // Wire contract with the backend's PageBlock/BoundingBox models
-// (backend/models/common.py). Field names and shape must match exactly —
+// (backend/models/common.py). Field names and shape must match exactly -
 // the backend is the source of truth; this file follows it, not vice versa.
 
 export type Landmark = 'main' | 'article' | 'nav' | 'aside' | 'header' | 'footer' | 'form' | 'dialog' | 'other'

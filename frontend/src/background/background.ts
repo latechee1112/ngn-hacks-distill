@@ -2,7 +2,7 @@ import { ANALYZE_PORT } from '../shared/messaging'
 import type { AnalyzeBackendResult } from '../types/analysis'
 
 // Local dev backend. The fetch must happen here in the service worker, not in the
-// content script — a content script's fetch Origin is the visited page's origin, not
+// content script - a content script's fetch Origin is the visited page's origin, not
 // chrome-extension://<id>, so it wouldn't match the backend's CORS allowlist.
 const BACKEND_URL = 'http://127.0.0.1:8000'
 // Generous headroom over the backend's own LLM timeout (45s) plus network overhead -
@@ -12,7 +12,7 @@ const ANALYZE_TIMEOUT_MS = 60000
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[Distill] service worker installed')
-  // First install only — walks the user through the calibration wizard in a
+  // First install only - walks the user through the calibration wizard in a
   // full tab (a popup is capped at ~600x800px, nowhere near "full screen").
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('calibration.html') }).catch(console.error)
@@ -45,7 +45,7 @@ async function analyzePage(payload: unknown): Promise<AnalyzeBackendResult> {
 }
 
 // Analysis runs over a long-lived port rather than one-shot sendMessage, for two
-// reasons that are really the same reason — an MV3 service worker is disposable:
+// reasons that are really the same reason - an MV3 service worker is disposable:
 //
 //   1. Liveness. If the worker is torn down mid-analysis, a sendMessage callback can
 //      simply never fire, leaving the content script waiting forever on a reply that
@@ -53,7 +53,7 @@ async function analyzePage(payload: unknown): Promise<AnalyzeBackendResult> {
 //      A port's onDisconnect fires the instant the worker goes, so the caller finds out
 //      immediately instead of waiting out a timeout.
 //   2. Survival. Traffic over a port resets the worker's idle timer, so the heartbeat
-//      below also keeps the worker alive for the length of a slow analysis — which
+//      below also keeps the worker alive for the length of a slow analysis - which
 //      means the disconnect it's there to detect mostly stops happening.
 // Comfortably under the ~30s idle shutdown, and frequent enough that the content
 // script's watchdog can call a stall quickly without being trigger-happy.
@@ -79,7 +79,7 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   }, HEARTBEAT_MS)
 
-  // The content script went away — nothing to answer, so stop the heartbeat rather
+  // The content script went away - nothing to answer, so stop the heartbeat rather
   // than leaving an interval running in the worker.
   port.onDisconnect.addListener(close)
 

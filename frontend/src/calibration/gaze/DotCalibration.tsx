@@ -3,6 +3,7 @@ import Icon from '../../sidepanel/Icon'
 import {
   CALIBRATION_DOT_INTERVAL_MS,
   CALIBRATION_DOTS,
+  CALIBRATION_MOVE_MS,
   CALIBRATION_SETTLE_MS,
   dotToNormalizedPoint,
 } from './calibrationFit'
@@ -28,6 +29,14 @@ const COUNTDOWN_TICK_MS = 800
 const RING_RADIUS = 17
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
+// Derived rather than written into the copy as a literal, so slowing the dots
+// down (as CALIBRATION_DOT_INTERVAL_MS just was) can't leave the intro
+// promising a duration the sequence no longer takes. Every dot costs its dwell
+// plus its travel; the first dot's travel is zero, which is inside the rounding.
+const ESTIMATED_SECONDS = Math.round(
+  (CALIBRATION_DOTS.length * (CALIBRATION_DOT_INTERVAL_MS + CALIBRATION_MOVE_MS)) / 1000,
+)
+
 function DotCalibration({
   tracker,
   onDone,
@@ -44,6 +53,19 @@ function DotCalibration({
   const [loadError, setLoadError] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Read once via a lazy initializer - this component's lifetime is a handful
+  // of seconds, so a live subscription to changes buys nothing, and state
+  // (read freely during render) is the right tool here rather than a ref
+  // (which react-hooks/refs flags reading during render, since a ref update
+  // wouldn't repaint - this one is never written after mount, so that's moot,
+  // but state sidesteps the lint rule entirely). Mirrors App.tsx's own inline
+  // check.
+  const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  // The very first dot has nothing to travel from, so it just appears -
+  // arrival is immediate either way. Every dot after that travels for
+  // CALIBRATION_MOVE_MS, unless reduced motion asks for the old instant jump.
+  const arrivalDelayMs = dotIndex === 0 || reducedMotion ? 0 : CALIBRATION_MOVE_MS
+
   // Development shortcut: install a previously fitted eye -> screen mapping
   // and skip straight past the dots. onDone() is the same callback the real
   // sequence ends with, so everything downstream (practice, trials, the gaze
@@ -56,7 +78,7 @@ function DotCalibration({
     setLoadError('')
     const parsed = parseGazeCalibrationFile(await picked.text())
     if (!parsed.ok) {
-      setLoadError(`Couldn't load that file — ${parsed.error}.`)
+      setLoadError(`Couldn't load that file - ${parsed.error}.`)
       return
     }
     if (parsed.warning) console.warn('[Distill]', parsed.warning)
@@ -105,15 +127,19 @@ function DotCalibration({
     // the eye was still moving toward this dot (reaction time + saccade),
     // then capture registers only what accumulates after that - see
     // CALIBRATION_SETTLE_MS in calibrationFit.ts for why this matters more
-    // than it looks like it should.
+    // than it looks like it should. Both delays are pushed back by
+    // arrivalDelayMs so that budget starts counting from when the dot
+    // actually lands (its CALIBRATION_MOVE_MS transition, tracked in the JSX
+    // below) rather than from the moment dotIndex changes and the dot is
+    // still travelling.
     const settle = window.setTimeout(() => {
       tracker.clearCalibrationBuffer()
-    }, CALIBRATION_SETTLE_MS)
+    }, arrivalDelayMs + CALIBRATION_SETTLE_MS)
     const capture = window.setTimeout(() => {
       const [x, y] = dotToNormalizedPoint(CALIBRATION_DOTS[dotIndex])
       tracker.registerCalibrationPoint(x, y)
       setDotIndex((i) => i + 1)
-    }, CALIBRATION_DOT_INTERVAL_MS)
+    }, arrivalDelayMs + CALIBRATION_DOT_INTERVAL_MS)
     return () => {
       window.clearTimeout(settle)
       window.clearTimeout(capture)
@@ -133,7 +159,7 @@ function DotCalibration({
           {[
             `${CALIBRATION_DOTS.length} dots will appear, one at a time.`,
             'Look at each one until it moves. A ring around the dot shows when it is about to.',
-            'It takes about 15 seconds in total.',
+            `It takes about ${ESTIMATED_SECONDS} seconds in total.`,
             'Try to keep your head still. Blinking is completely fine.',
           ].map((line) => (
             <div key={line} className="flex items-start gap-3">
@@ -149,7 +175,7 @@ function DotCalibration({
         >
           I'm ready
         </button>
-        <p className="text-meta text-on-surface-muted">Nothing is recorded — the camera feed never leaves this page.</p>
+        <p className="text-meta text-on-surface-muted">Nothing is recorded - the camera feed never leaves this page.</p>
 
         {/* Development affordance, kept visually quiet so it reads as a tool
             rather than a step. */}
@@ -182,7 +208,7 @@ function DotCalibration({
   if (phase === 'countdown') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background text-center">
-        <p className="text-body text-on-surface-variant">Get ready — look at the first dot</p>
+        <p className="text-body text-on-surface-variant">Get ready - look at the first dot</p>
         <p aria-live="assertive" className="text-[64px] leading-none font-semibold text-on-background tabular-nums">
           {count}
         </p>
@@ -199,18 +225,36 @@ function DotCalibration({
         {CALIBRATION_DOTS.length}
       </p>
       {dotIndex < CALIBRATION_DOTS.length && (
-        // No position transition. The old `transition-all duration-300` slid
-        // the dot between locations, which was wrong twice over: gliding
-        // motion is exactly what a motion-sensitive user does not want, and
-        // it made the eye smooth-pursue the slide instead of saccading to a
-        // new position - so CALIBRATION_SETTLE_MS, which budgets for reaction
-        // time plus a saccade, was covering the wrong 300ms entirely. It
-        // jumps now, which is both calmer to watch and what the settle window
-        // actually assumes.
+        // Travels to its new spot over CALIBRATION_MOVE_MS rather than
+        // teleporting (transitionDuration below), landing with a shockwave
+        // burst (the sibling .dot-shockwave ring). An earlier version of this
+        // slid the dot too and reverted it: gliding motion is unwanted for
+        // this extension's motion-sensitive users, and the eye smooth-pursuing
+        // the slide meant CALIBRATION_SETTLE_MS's reaction-time-plus-saccade
+        // budget was covering the wrong window. Both are handled now rather
+        // than avoided - reducedMotion zeroes the transition (and the CSS
+        // media query below independently kills the shockwave) for anyone who
+        // asked for less motion, and arrivalDelayMs pushes the settle/capture
+        // timers (see the effect above) back to start counting from when the
+        // dot actually lands instead of from dotIndex changing.
         <div
-          className="absolute h-10 w-10 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${dot.xFraction * 100}%`, top: `${dot.yFraction * 100}%` }}
+          className="absolute h-10 w-10 -translate-x-1/2 -translate-y-1/2 transition-[left,top] ease-[cubic-bezier(0.16,1,0.3,1)]"
+          style={{
+            left: `${dot.xFraction * 100}%`,
+            top: `${dot.yFraction * 100}%`,
+            transitionDuration: reducedMotion ? '0ms' : `${CALIBRATION_MOVE_MS}ms`,
+          }}
         >
+          {/* Transparent but for the box-shadow ring - the solid fixation dot
+              below renders on top of it, so this only ever contributes the
+              expanding/fading ring, never a second solid circle. Keyed per
+              dot so it remounts and restarts on every arrival. */}
+          <div
+            key={dotIndex}
+            aria-hidden="true"
+            className="dot-shockwave absolute top-1/2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ animationDelay: `${arrivalDelayMs}ms` }}
+          />
           <svg viewBox="0 0 40 40" className="absolute inset-0 -rotate-90" aria-hidden="true">
             <circle
               cx="20"
@@ -222,7 +266,9 @@ function DotCalibration({
             />
             {/* Remounted per dot (key) so the fill animation restarts from
                 empty each time rather than carrying the previous dot's
-                progress over. */}
+                progress over. Delayed by arrivalDelayMs so it only starts
+                filling once the dot has actually landed - kept in step with
+                the settle/capture timers above, which the same delay offsets. */}
             <circle
               key={dotIndex}
               cx="20"
@@ -233,7 +279,10 @@ function DotCalibration({
               strokeLinecap="round"
               strokeDasharray={RING_CIRCUMFERENCE}
               className="dot-dwell stroke-accent-text"
-              style={{ ['--dwell-ms' as string]: `${CALIBRATION_DOT_INTERVAL_MS}ms` }}
+              style={{
+                ['--dwell-ms' as string]: `${CALIBRATION_DOT_INTERVAL_MS}ms`,
+                animationDelay: `${arrivalDelayMs}ms`,
+              }}
             />
           </svg>
           {/* Raised from 16px: a 16px dot is a hard fixation target for the

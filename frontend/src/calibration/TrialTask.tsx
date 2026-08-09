@@ -45,7 +45,7 @@ function TrialTask({
   isPractice?: boolean
 }) {
   // App.tsx mounts a fresh TrialTask per trial (key={trial.id}), so these only
-  // ever need to be computed once per mount — no reset-on-prop-change effect.
+  // ever need to be computed once per mount - no reset-on-prop-change effect.
   const [shapes] = useState<Shape[]>(() => buildShapes(trial.objectCount))
   // Refs, not state: click/timeout handlers need the current count and a
   // one-shot guard without waiting on a re-render.

@@ -84,7 +84,7 @@ async function flush(): Promise<void> {
     })
   } catch {
     // Extension context invalidated, or storage unavailable. The deltas are
-    // gone, which costs a few counters — never the page.
+    // gone, which costs a few counters - never the page.
   }
 }
 
@@ -97,7 +97,7 @@ function scheduleFlush(): void {
 }
 
 // Regions currently in view, with the timestamp they became visible. Time only
-// accrues while the document is actually focused — a tab left open in the
+// accrues while the document is actually focused - a tab left open in the
 // background is not reading.
 const visibleSince = new Map<Element, number>()
 
@@ -191,7 +191,7 @@ export function startUsageTracking(): void {
     true,
   )
 
-  // Focus/visibility changes end every open interval — otherwise a tab left
+  // Focus/visibility changes end every open interval - otherwise a tab left
   // open overnight records eight hours of "reading".
   const closeAll = () => {
     const now = performance.now()

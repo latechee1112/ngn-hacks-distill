@@ -33,13 +33,13 @@ import { startUsageTracking } from './usageTracker'
 console.log('[Distill] content script injected on', window.location.href)
 
 // Passive profiling runs from injection, on every page, whether or not the user
-// ever opens the panel — it is the input to profileFor()'s middle tier below,
+// ever opens the panel - it is the input to profileFor()'s middle tier below,
 // and it has nothing to observe if it only starts once simplification does.
 startUsageTracking()
 
 // The sidepanel's Simplification Controls, as sent with DISTILL_SIMPLIFY.
 export interface SimplifySettings {
-  // 0..1 — the sidepanel's Intensity slider (1-100%) divided by 100.
+  // 0..1 - the sidepanel's Intensity slider (1-100%) divided by 100.
   simplificationStrength: number
   reduceMotion: boolean
   largerText: boolean
@@ -57,7 +57,7 @@ const FALLBACK_SETTINGS: SimplifySettings = {
 
 // Calibration result (if any) is the base; the sidepanel's live Simplification
 // Controls always win over it for these fields, same as they already win over
-// DEFAULT_PROFILE — an explicit toggle is stronger intent than a one-time
+// DEFAULT_PROFILE - an explicit toggle is stronger intent than a one-time
 // calibration result. spacingMultiplier is deliberately left to the base profile:
 // larger text (settings.largerText, applied separately via setLargerText()) is
 // its own independent axis now, not a stand-in for paragraph/list spacing.
@@ -76,15 +76,15 @@ async function profileFor(settings: SimplifySettings): Promise<VisualProfile> {
 }
 
 // The scan sweep plays until handleSimplify() settles, so nothing in this pipeline may
-// hang forever — a pending promise here is a sweep looping over a page nothing is
+// hang forever - a pending promise here is a sweep looping over a page nothing is
 // analyzing. The request goes over a long-lived port (see background.ts) precisely
 // because that gives three independent ways to notice a dead request, in the order they
 // normally fire:
 //
-//   1. onDisconnect — the service worker died, or the extension was reloaded. Immediate.
-//   2. The heartbeat watchdog — the worker is alive but has stopped talking (a wedged
+//   1. onDisconnect - the service worker died, or the extension was reloaded. Immediate.
+//   2. The heartbeat watchdog - the worker is alive but has stopped talking (a wedged
 //      fetch, a suspended worker that never emits a disconnect).
-//   3. The absolute ceiling — last resort, above the background's own 60s analyze
+//   3. The absolute ceiling - last resort, above the background's own 60s analyze
 //      timeout plus network slack, so a legitimately slow analysis still wins.
 //
 // None of them is a failure state: each resolves like any other unreachable-backend
@@ -130,7 +130,7 @@ function requestBackendAnalysis(profile: VisualProfile): Promise<AnalyzeBackendR
     try {
       port = chrome.runtime.connect({ name: ANALYZE_PORT })
     } catch (err) {
-      // Extension context invalidated (reload/update) — there is nothing to connect to.
+      // Extension context invalidated (reload/update) - there is nothing to connect to.
       resolve({ ok: false, error: err instanceof Error ? err.message : String(err) })
       return
     }
@@ -162,16 +162,16 @@ function requestBackendAnalysis(profile: VisualProfile): Promise<AnalyzeBackendR
 
 // Two stages, in this order:
 //
-//   1. Local pre-filter — the unambiguous stuff (a "Promoted"/"Sponsored" badge, an
+//   1. Local pre-filter - the unambiguous stuff (a "Promoted"/"Sponsored" badge, an
 //      ad-network iframe, a container literally named "ad"/"sponsor"). No model needed
 //      to call those, so they are hidden immediately, before anything is sent anywhere.
-//   2. Backend analysis — runs on the *remaining* page, since extractPage() skips
+//   2. Backend analysis - runs on the *remaining* page, since extractPage() skips
 //      whatever stage 1 already resolved. Its judgement is spent on the genuinely
 //      ambiguous blocks, not on re-deciding obvious ads.
 //
 // Backend-driven simplification is the primary path for stage 2; the local heuristic
 // (no LLM, no task-awareness) is only a fallback for when the backend is unreachable.
-// Stage 1 stands on its own either way — if the backend is down, the ads still go.
+// Stage 1 stands on its own either way - if the backend is down, the ads still go.
 async function handleSimplify(settings: SimplifySettings): Promise<SimplifyResult> {
   const prefiltered = prefilterPage()
   console.log(
@@ -192,7 +192,7 @@ async function handleSimplify(settings: SimplifySettings): Promise<SimplifyResul
   }
 
   // Applied last, on both paths, so the user's explicit toggles override the
-  // backend's suggested layout — and so they still apply when the local
+  // backend's suggested layout - and so they still apply when the local
   // heuristic runs, which sets no layout variables of its own.
   applyLayoutPreferences({
     reduceMotion: settings.reduceMotion,
@@ -214,15 +214,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'DISTILL_SIMPLIFY': {
       // Deliberately not awaited: the sweep is decoration running alongside
       // the analysis call, never in front of it. stop() must fire on every
-      // path — success or failure — because the sweep now loops for as long as
+      // path - success or failure - because the sweep now loops for as long as
       // the analysis runs and has no time limit of its own to fall back on.
-      // Activate only — restoring the page does not replay it.
+      // Activate only - restoring the page does not replay it.
       const settings: SimplifySettings = { ...FALLBACK_SETTINGS, ...(message.settings ?? {}) }
       const stopScan = startScanAnimation(revealSimplification)
       // Closing the side panel while the scan runs closes the channel this reply goes
       // down, and sendResponse then throws. That must not be mistaken for the analysis
       // failing: unguarded, the throw lands in the .catch below, which rolls the whole
-      // page back — so closing the panel would silently undo the simplification the
+      // page back - so closing the panel would silently undo the simplification the
       // user asked for. Nobody is listening either way, so the failure is ignorable.
       const respond = (payload: SimplifyResponse) => {
         try {
@@ -258,14 +258,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true
     }
     case 'DISTILL_SET_REDUCE_MOTION': {
-      // applied:false just means there is no simplified page yet — the panel
+      // applied:false just means there is no simplified page yet - the panel
       // keeps the preference and it ships with the next DISTILL_SIMPLIFY.
       const applied = setReduceMotion(!!message.enabled)
       sendResponse({ applied, active: isReduceMotionOn() })
       return true
     }
     case 'DISTILL_SET_BLUR': {
-      // Pure CSS variable — no re-analysis, so a slider drag repaints the page
+      // Pure CSS variable - no re-analysis, so a slider drag repaints the page
       // live. applied:false only means nothing is simplified yet; the panel keeps
       // the value and it ships with the next DISTILL_SIMPLIFY.
       const applied = setBlurIntensity(Number(message.intensity))

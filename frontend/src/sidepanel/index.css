@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* Neutral gray scale — surfaces and text. No hue tint. */
+  /* Neutral gray scale - surfaces and text. No hue tint. */
   --color-background: #121212;
   --color-surface: #1a1a1a;
   --color-surface-hover: #222222;
@@ -13,7 +13,7 @@
   --color-on-surface-muted: #6b6b6b;
 
   /* Single accent. Reserved for the primary action and the active
-     processing state — never used decoratively. */
+     processing state - never used decoratively. */
   --color-accent: #2f6fb5;
   --color-accent-hover: #275c96;
   --color-accent-fg: #ffffff;
@@ -91,4 +91,37 @@ input[type="range"]:focus-visible {
 input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--color-on-surface-variant);
   outline-offset: 2px;
+}
+
+/* An occasional glint across the primary CTA, not a continuous marquee - the
+   keyframe sweeps across the first ~35% of the cycle and then holds off-screen
+   for the rest, so it reads as an idle attention cue rather than a busy loop.
+   Only applied while the button is genuinely idle (see App.tsx: not analyzing,
+   not yet simplified) since a settled "Show Original Page" state doesn't need
+   one and the sweep would otherwise compete with the analyzing spinner. */
+@keyframes button-shimmer {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  35%,
+  100% {
+    transform: translateX(220%) skewX(-20deg);
+  }
+}
+
+.simplify-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 20%), transparent);
+  animation: button-shimmer 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .simplify-shimmer::after {
+    animation: none;
+    content: none;
+  }
 }

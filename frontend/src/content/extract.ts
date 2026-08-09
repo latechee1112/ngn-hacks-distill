@@ -17,7 +17,7 @@ const TEXT_MAX = 300
 const LINK_GROUP_MIN_LINKS = 4
 
 // Mirror of the backend's PageBlock field bounds. A value over these used to fail
-// the whole request with 422 — every block on the page lost because one element
+// the whole request with 422 - every block on the page lost because one element
 // had a long custom tag name. The server now truncates rather than rejects, but
 // staying inside the contract here keeps the payload smaller and means an older
 // backend build still works.
@@ -36,7 +36,7 @@ const ROLE_MAX = 64
 // Either way a request that is too big means no LLM analysis: the extension falls
 // back to the local heuristic and the user is never told why. So the budget is
 // enforced here by dropping the least significant blocks. 60 keeps the round-trip
-// under ten seconds. 150 now completes too, at ~33s — raise this only if that
+// under ten seconds. 150 now completes too, at ~33s - raise this only if that
 // wait is acceptable, and never above the backend's own limit.
 const MAX_BLOCKS = 60
 
@@ -63,7 +63,7 @@ const VIDEO_EMBED_PATTERN = /youtube|vimeo|player/i
 
 // Tiny media is dropped outright rather than ranked: it is never the answer to
 // "what is this page about", and every one of them costs a block of the budget.
-// Ad-network frames are the exception — a 1x1 iframe is exactly what a tracker
+// Ad-network frames are the exception - a 1x1 iframe is exactly what a tracker
 // looks like, and the backend should still be told about it.
 function isDecorativeMedia(el: Element): boolean {
   if (!MEDIA_TAGS.includes(el.tagName.toLowerCase())) return false
@@ -215,7 +215,7 @@ function isAutoplayMediaOf(el: Element): boolean {
   return false
 }
 
-// Viewport-relative fractions (0-1), matching the backend's BoundingBox contract —
+// Viewport-relative fractions (0-1), matching the backend's BoundingBox contract -
 // getBoundingClientRect() is already viewport-relative, so no scroll offset is added.
 // Clamped because elements partially or fully outside the viewport otherwise produce
 // values <0 or >1, which the backend rejects outright.
@@ -247,7 +247,7 @@ function getAssociatedLabelText(el: Element): string {
   return closestLabel?.textContent || ''
 }
 
-// Never reads .value — only label/placeholder/aria text, so field contents (passwords,
+// Never reads .value - only label/placeholder/aria text, so field contents (passwords,
 // payment numbers, any user input) never leave the page.
 function textOf(el: Element): string {
   if (isFormControlOf(el)) {
@@ -295,8 +295,8 @@ function buildBlock(el: Element, counter: { n: number }, opts: { repeatedLink?: 
   return {
     blockId: id,
     // Clamped to the backend's PageBlock bounds. Web components have no length
-    // convention — YouTube renders <yt-thumbnail-bottom-overlay-view-model>, 38
-    // characters — and the server's own limits are what the payload has to fit.
+    // convention - YouTube renders <yt-thumbnail-bottom-overlay-view-model>, 38
+    // characters - and the server's own limits are what the payload has to fit.
     tag: el.tagName.toLowerCase().slice(0, TAG_MAX),
     landmark: landmarkOf(el),
     role: roleOf(el).slice(0, ROLE_MAX),
@@ -324,8 +324,8 @@ function isSafetyCritical(block: PageBlock): boolean {
   return block.isPasswordField || block.isPaymentField || block.isConsentControl || block.isWarning
 }
 
-// What survives the budget. Screen area is the primary signal — a page's real
-// content is the part that occupies it — with text length as the tiebreaker
+// What survives the budget. Screen area is the primary signal - a page's real
+// content is the part that occupies it - with text length as the tiebreaker
 // between equally sized blocks and a small nudge for semantic landmarks. Ads and
 // sticky promos are scored too rather than dropped: knowing where the noise is
 // is what lets the backend deemphasize it.
@@ -338,7 +338,7 @@ function blockScore(block: PageBlock): number {
   return area * 2 + textWeight + landmarkBonus
 }
 
-// Trims to MAX_BLOCKS by significance, then restores document order — the backend
+// Trims to MAX_BLOCKS by significance, then restores document order - the backend
 // keys off blockId so order is not load-bearing, but a payload that reads
 // top-to-bottom gives the LLM the page's actual structure to reason about.
 function applyBlockBudget(blocks: PageBlock[]): PageBlock[] {
@@ -359,7 +359,7 @@ export function extractPage(): ExtractionResult {
   // Blocks the local pre-filter already resolved as ads are dropped here rather than
   // sent and re-judged: the decision is made, and leaving them out keeps the payload
   // (and the LLM's attention) on the parts that actually need a judgement call. They
-  // are only display:none, so isVisible() would already exclude most of them — this
+  // are only display:none, so isVisible() would already exclude most of them - this
   // also covers their still-laid-out descendants.
   document.querySelectorAll(CANDIDATE_SELECTOR).forEach((el) => {
     if (seen.has(el) || !isVisible(el) || !isExtractable(el) || isPrefilteredAd(el)) return

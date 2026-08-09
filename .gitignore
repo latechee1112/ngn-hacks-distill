@@ -5,7 +5,7 @@ env/
 # JavaScript dependencies are restored from package-lock.json.
 node_modules/
 
-# Environment / secrets — never commit real values.
+# Environment / secrets - never commit real values.
 # .env.* is ignored broadly; the two lines below explicitly un-ignore the
 # checked-in templates (no real secrets, safe to track).
 .env
@@ -13,6 +13,6 @@ node_modules/
 !.env.example
 !.env.*.example
 
-# Local VS Code workspace settings — points python.envFile at backend/.env,
+# Local VS Code workspace settings - points python.envFile at backend/.env,
 # a per-machine convenience, not something to force on other contributors.
 .vscode/

@@ -1,6 +1,6 @@
 // Marks a block the local pre-filter already resolved as an ad. Lives here rather than
 // in simplify.ts so extract.ts can skip these without importing simplify (which imports
-// extract) — and so the "is this filtered?" check is one shared definition.
+// extract) - and so the "is this filtered?" check is one shared definition.
 export const AD_HIDDEN_CLASS = 'distill-ad-hidden'
 
 // Blur/dim applied to secondary content. Lives here for the same reason as the class
@@ -70,7 +70,7 @@ export function isAdLike(el: Element): boolean {
   return el.tagName.toLowerCase() === 'ins' && classNameString(el).includes('adsbygoogle')
 }
 
-// An iframe/script served by a known ad network — the actual creative, whatever the
+// An iframe/script served by a known ad network - the actual creative, whatever the
 // surrounding markup happens to be named.
 export function isAdNetworkFrame(el: Element): boolean {
   const tag = el.tagName.toLowerCase()
@@ -79,13 +79,13 @@ export function isAdNetworkFrame(el: Element): boolean {
   return AD_NETWORK_PATTERN.test(src) || /^google_ads/i.test(el.id || '')
 }
 
-// True when this element IS the little "Promoted"/"Sponsored" badge — not when it
+// True when this element IS the little "Promoted"/"Sponsored" badge - not when it
 // merely contains one. Callers walk up from here to find the post it belongs to.
 export function isSponsoredLabel(el: Element): boolean {
   const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
   if (!text || text.length > SPONSORED_LABEL_MAX_LEN) return false
   if (SPONSORED_LABEL_PATTERN.test(text)) return true
-  // Feeds often fuse the badge into the byline row — "anthropic-ai · Promoted",
+  // Feeds often fuse the badge into the byline row - "anthropic-ai · Promoted",
   // "Some Brand • Sponsored". Checking each separator-delimited segment catches those
   // without matching prose, since a whole segment has to be exactly the badge word.
   return text.split(/[·•|]|\s[–—-]\s/).some((segment) => SPONSORED_SEGMENT_PATTERN.test(segment.trim()))
@@ -163,7 +163,7 @@ function isInteractiveish(el: Element): boolean {
   return !!role && ['button', 'link'].includes(role)
 }
 
-// Just the accept/reject/manage action wording — real banner buttons ("Accept", "Reject
+// Just the accept/reject/manage action wording - real banner buttons ("Accept", "Reject
 // All", "Manage preferences") virtually never restate "cookie"/"consent" in the button's
 // own text, so this stays intentionally topic-agnostic. Used as a sub-check by
 // isConsentBannerLike, which supplies the surrounding topic context itself.
@@ -174,7 +174,7 @@ function hasConsentActionWording(el: Element): boolean {
 }
 
 // A single control (button/link) that is self-sufficient evidence of being a cookie/
-// consent action on its own — both the action wording AND the cookie/consent topic are
+// consent action on its own - both the action wording AND the cookie/consent topic are
 // present together, e.g. "Accept All Cookies" or a button classed "cookie-accept-btn".
 // Stricter than hasConsentActionWording on purpose: without banner context, a bare
 // "Accept"/"Agree" button is just as likely to belong to a ToS modal or newsletter signup.
@@ -184,11 +184,11 @@ export function isConsentControlLike(el: Element): boolean {
   return CONSENT_TEXT_PATTERN.test(hay) || CONSENT_CLASS_PATTERN.test(classNameString(el))
 }
 
-// A container that IS (or wraps) a cookie/consent notice — the shape that gets caught
+// A container that IS (or wraps) a cookie/consent notice - the shape that gets caught
 // by generic "sticky/fixed chrome" sweeps and must be excluded from them. Matches on
 // class/id naming, dialog role + consent-flavored aria-label, or consent-flavored banner
 // text paired with a nested accept/reject/manage button (the button need not itself repeat
-// "cookie"/"consent" — the banner's own text already establishes the topic).
+// "cookie"/"consent" - the banner's own text already establishes the topic).
 export function isConsentBannerLike(el: Element): boolean {
   const cls = classNameString(el)
   if (CONSENT_CLASS_PATTERN.test(cls)) return true
@@ -202,7 +202,7 @@ export function isConsentBannerLike(el: Element): boolean {
   return Array.from(el.querySelectorAll('button, a, [role="button"]')).some(hasConsentActionWording)
 }
 
-// role=alert / aria-live=assertive / warning-flavored class naming — form validation
+// role=alert / aria-live=assertive / warning-flavored class naming - form validation
 // errors, safety warnings, etc.
 export function isWarningLike(el: Element): boolean {
   const role = el.getAttribute('role')
@@ -211,7 +211,7 @@ export function isWarningLike(el: Element): boolean {
   return WARNING_PATTERN.test(classNameString(el))
 }
 
-// A password or payment field anywhere inside the element — safety-critical per the
+// A password or payment field anywhere inside the element - safety-critical per the
 // backend's is_safety_critical() contract, so containers holding one must never collapse.
 export function containsSensitiveField(el: Element): boolean {
   if (el.querySelector('input[type="password"]')) return true
@@ -239,7 +239,7 @@ const PROTECTED_DESCENDANT_SELECTOR =
 // Safety-critical per the backend's is_safety_critical()/is_protected_from_collapse()
 // contract: consent banners, warnings, and anything holding a password/payment field
 // must never be dimmed, hidden, or collapsed by simplification. Also true if a protected
-// element is merely nested inside — dimming an ancestor's opacity dims its children too,
+// element is merely nested inside - dimming an ancestor's opacity dims its children too,
 // so a container wrapping a cookie banner is just as unsafe to target as the banner itself.
 export function isProtectedFromSimplification(el: Element): boolean {
   if (isConsentBannerLike(el) || isConsentControlLike(el) || isWarningLike(el) || containsSensitiveField(el)) {
