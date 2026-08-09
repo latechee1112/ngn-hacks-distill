@@ -167,7 +167,7 @@ function DotCalibration({
             className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-meta text-on-surface-muted transition-colors hover:text-on-surface-variant ${FOCUS_RING}`}
           >
             <Icon name="upload" />
-            Dev: load a saved eye calibration and skip the dots
+            Load a saved eye calibration
           </button>
           {loadError && (
             <p role="alert" className="max-w-sm text-meta text-danger-text">

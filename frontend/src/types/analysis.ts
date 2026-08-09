@@ -36,7 +36,10 @@ export interface VisualProfile {
   reduceMotion: boolean
   progressiveReveal: boolean
   simplificationStrength: number
-  source: 'calibration' | 'manual' | 'default'
+  // 'usage' is the passively-derived profile (see content/usageTracker.ts):
+  // same shape and same downstream treatment as a calibrated one, just built
+  // from ordinary browsing instead of the wizard.
+  source: 'calibration' | 'usage' | 'manual' | 'default'
 }
 
 export type AnalyzeBackendResult =

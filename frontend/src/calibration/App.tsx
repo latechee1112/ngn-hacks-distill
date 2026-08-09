@@ -30,16 +30,6 @@ import { PRACTICE_TRIAL, TRIALS } from './trials'
 // worker.
 const BACKEND_URL = 'http://127.0.0.1:8000'
 
-// Opened in its own tab rather than rendered here: it runs a second camera
-// stream and its own tracker, and the whole point of moving it out of this
-// page was that it must not share a viewport with the trials it would
-// otherwise be measured alongside. chrome.runtime is absent under `vite dev`,
-// where the page is served from localhost instead of chrome-extension://.
-function openFaceTrackDebug() {
-  const url = chrome?.runtime?.getURL ? chrome.runtime.getURL('debug.html') : '/debug.html'
-  window.open(url, '_blank', 'noopener')
-}
-
 async function markDismissed() {
   try {
     const record: StoredCalibration = { dismissed: true }
@@ -501,8 +491,8 @@ function App() {
     downloadGazeCalibrationFile(buildGazeCalibrationFile(pairs, matrix))
     // Residual is the honest quality signal here: a mapping can always be
     // fitted, but one fitted through scattered points will put the blob in
-    // the wrong place, and that is much cheaper to notice now than halfway
-    // through the next debugging session.
+    // the wrong place, and that is much cheaper to notice now than after a
+    // calibration that quietly maps gaze to the wrong part of the screen.
     const meanError = residualError(matrix, pairs)
     setGazeSaveNote(
       `Saved ${pairs.length} points · mean error ${(meanError * 100).toFixed(1)}% of the viewport${
@@ -537,15 +527,7 @@ function App() {
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
           >
             <Icon name="upload" />
-            Dev: load a saved profile and skip everything
-          </button>
-          <button
-            type="button"
-            onClick={openFaceTrackDebug}
-            className={`flex items-center gap-2 rounded-md px-4 py-2 text-meta text-on-surface-variant transition-colors hover:text-on-surface ${FOCUS_RING}`}
-          >
-            <Icon name="eye" />
-            Debug: open facetrack debug
+            Load a saved profile
           </button>
           {importError && (
             <p role="alert" className="max-w-sm text-meta text-danger-text">
@@ -612,7 +594,7 @@ function App() {
               className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-meta text-on-surface-muted transition-colors hover:text-on-surface-variant ${FOCUS_RING}`}
             >
               <Icon name="download" />
-              Dev: save this eye calibration
+              Save this eye calibration
             </button>
             {gazeSaveNote && <p className="max-w-sm text-meta text-on-surface-variant">{gazeSaveNote}</p>}
           </div>

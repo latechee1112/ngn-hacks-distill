@@ -18,17 +18,6 @@ const PATHS = {
   expand: ['M8 3H5a2 2 0 0 0-2 2v3', 'M21 8V5a2 2 0 0 0-2-2h-3', 'M3 16v3a2 2 0 0 0 2 2h3', 'M16 21h3a2 2 0 0 0 2-2v-3'],
   // Open 3/4 ring — pair with the `animate-spin` class for a loading spinner.
   spinner: ['M12 3a9 9 0 1 0 9 9'],
-  bug: [
-    'M8 6a4 4 0 0 1 8 0',
-    'M6 10a6 6 0 0 1 12 0v3a6 6 0 0 1-12 0v-3Z',
-    'M2 12h4',
-    'M18 12h4',
-    'M3 6l3 2',
-    'M21 6l-3 2',
-    'M3 18l3-2',
-    'M21 18l-3-2',
-  ],
-  copy: ['M9 9h10v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9Z', 'M15 5H5a2 2 0 0 0-2 2v10'],
   check: ['m4 12 5 5L20 6'],
   // Tray with an arrow into it / out of it — saving and loading a calibration
   // file in the calibration wizard. Same tray path both ways so the pair reads

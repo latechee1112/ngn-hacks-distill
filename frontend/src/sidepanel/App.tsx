@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import Icon from './Icon'
-import type { ExtractionResult } from '../types/page'
 import type { SimplifyResponse } from '../types/analysis'
 import { CALIBRATION_STORAGE_KEY, type StoredCalibration } from '../types/calibration'
 
@@ -40,7 +39,6 @@ const FOCUS_RING =
 const GLASS = 'backdrop-blur-md backdrop-saturate-150 border transition-colors'
 const GLASS_SECONDARY = `${GLASS} border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/15`
 const GLASS_ACCENT = `${GLASS} border-accent-text/30 bg-accent/55 hover:bg-accent/70`
-const GLASS_DEBUG = `${GLASS} border-debug-text/30 bg-debug/15 hover:bg-debug/25`
 // No fill at rest — the glass only condenses in on hover/focus, for the one button
 // that's meant to read as the lowest-emphasis action in the panel.
 const GLASS_GHOST =
@@ -51,11 +49,20 @@ const GLASS_GHOST =
 // already in the manifest) keeps them across opens and across browser restarts.
 const SETTINGS_KEY = 'distillSettings'
 
+// Mirrors the backend's AnalyzePageRequest.task bound (max_length=300). Over it
+// the whole request 422s, so it is enforced at the input rather than discovered
+// on submit.
+export const TASK_MAX_LENGTH = 300
+
 interface StoredSettings {
   intensity: number // 1-100, as shown on the slider
   reduceMotion: boolean
   largerText: boolean
   reduceColorVariation: boolean
+  // What the user came to this page to do. Free text, empty by default; the
+  // backend substitutes its own generic string when this is blank, so an empty
+  // box behaves exactly as the panel did before this existed.
+  task: string
 }
 
 const DEFAULT_SETTINGS: StoredSettings = {
@@ -70,6 +77,7 @@ const DEFAULT_SETTINGS: StoredSettings = {
   reduceMotion: false,
   largerText: true,
   reduceColorVariation: false,
+  task: '',
 }
 
 async function loadSettings(): Promise<StoredSettings> {
@@ -92,16 +100,10 @@ function App() {
   // answer ("clean page"), so this only renders once something is simplified.
   const [adsHidden, setAdsHidden] = useState(0)
 
-  // Debug-only: the last raw extraction, pretty-printed. null means "never
-  // dumped in this panel session" — the output panel stays hidden until then.
-  const [rawBlocks, setRawBlocks] = useState<string | null>(null)
-  const [rawBlockCount, setRawBlockCount] = useState(0)
-  const [dumping, setDumping] = useState(false)
-  const [copied, setCopied] = useState(false)
-
   const [intensity, setIntensity] = useState(DEFAULT_SETTINGS.intensity)
   const [reduceMotion, setReduceMotion] = useState(DEFAULT_SETTINGS.reduceMotion)
   const [largerText, setLargerText] = useState(DEFAULT_SETTINGS.largerText)
+  const [task, setTask] = useState(DEFAULT_SETTINGS.task)
   // Guards the persist effect below: without it the first render would write
   // the defaults over whatever was stored before load() resolves.
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -180,6 +182,7 @@ function App() {
       setIntensity(stored.intensity)
       setReduceMotion(stored.reduceMotion)
       setLargerText(stored.largerText)
+      setTask(stored.task)
       setColorReductionActive(stored.reduceColorVariation)
       await refreshStatus()
       await checkCalibrationStatus()
@@ -191,9 +194,11 @@ function App() {
   useEffect(() => {
     if (!settingsLoaded) return
     chrome.storage.local
-      .set({ [SETTINGS_KEY]: { intensity, reduceMotion, largerText, reduceColorVariation: colorReductionActive } })
+      .set({
+        [SETTINGS_KEY]: { intensity, reduceMotion, largerText, reduceColorVariation: colorReductionActive, task },
+      })
       .catch(() => { })
-  }, [settingsLoaded, intensity, reduceMotion, largerText, colorReductionActive])
+  }, [settingsLoaded, intensity, reduceMotion, largerText, colorReductionActive, task])
 
   async function simplifyPage() {
     setError('')
@@ -212,6 +217,10 @@ function App() {
           reduceMotion,
           largerText,
           reduceColorVariation: colorReductionActive,
+          // Trimmed here rather than on every keystroke, so the box keeps the
+          // trailing space someone is mid-sentence on. Blank sends nothing and
+          // the backend falls back to its generic browsing task.
+          task: task.trim(),
         },
       })
       // The content script rolls the page back before reporting a failure, so the
@@ -246,48 +255,6 @@ function App() {
       setAdsHidden(0)
     } catch (err) {
       setError(`Couldn't restore this page: ${String(err)}`)
-    }
-  }
-
-  // Debug affordance: re-runs the same extraction that gets sent to the backend
-  // and shows it verbatim, so a bad simplification can be traced to what the
-  // page actually looked like at extraction time. Read-only — DISTILL_EXTRACT
-  // touches nothing but the data-distill-id attributes extract() already sets.
-  async function dumpRawBlocks() {
-    setError('')
-    setCopied(false)
-    setDumping(true)
-    try {
-      const tabId = await getActiveTabId()
-      if (!tabId) {
-        setError('No active tab found')
-        return
-      }
-      const response = await sendToTab<ExtractionResult>(tabId, { type: 'DISTILL_EXTRACT' })
-      setRawBlockCount(response.blocks.length)
-      setRawBlocks(JSON.stringify(response.blocks, null, 2))
-    } catch (err) {
-      setRawBlocks(null)
-      setRawBlockCount(0)
-      // Chrome refuses injection on its own pages and the Web Store, so this
-      // is a page Distill can never read — not a bug worth a raw stack trace.
-      const message = /cannot be scripted|chrome:\/\/|extension:\/\//i.test(String(err))
-        ? "This page can't be read by extensions (chrome:// pages, the Web Store, and PDF viewer are off limits)."
-        : String(err)
-      setError(`Couldn't extract blocks from this page: ${message}`)
-    } finally {
-      setDumping(false)
-    }
-  }
-
-  async function copyRawBlocks() {
-    if (!rawBlocks) return
-    try {
-      await navigator.clipboard.writeText(rawBlocks)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch (err) {
-      setError(`Couldn't copy to clipboard: ${String(err)}`)
     }
   }
 
@@ -571,55 +538,32 @@ function App() {
           </button>
         </div>
 
-        {/* Debug tools. Bright green on purpose — this is developer output, not
-            a user-facing control, and it should never blend into the panel. */}
-        <div className="flex flex-col gap-2 pb-2">
-          <h2 className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">Debug</h2>
-          <button
-            type="button"
-            onClick={dumpRawBlocks}
-            disabled={dumping}
-            aria-busy={dumping}
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-body font-medium ${FOCUS_RING} ${dumping ? `cursor-wait ${GLASS_SECONDARY} text-on-surface-variant` : `${GLASS_DEBUG} text-debug-fg`
-              }`}
-          >
-            {dumping ? (
-              <>
-                <Icon name="spinner" className="animate-spin text-debug-text" />
-                Extracting…
-              </>
-            ) : (
-              <>
-                <Icon name="bug" />
-                Dump Raw Blocks JSON
-              </>
-            )}
-          </button>
-
-          {rawBlocks !== null && (
-            <details className="overflow-hidden rounded-md border border-debug/40 bg-surface" open>
-              <summary
-                className={`cursor-pointer list-none px-3 py-2 text-meta font-semibold text-debug-text select-none marker:content-none hover:bg-surface-hover ${FOCUS_RING}`}
-              >
-                Raw blocks JSON · {rawBlockCount} block{rawBlockCount === 1 ? '' : 's'}
-              </summary>
-              <div className="border-t border-outline">
-                <pre className="max-h-64 overflow-auto p-3 font-mono text-meta leading-[15px] whitespace-pre text-on-surface">
-                  {rawBlocks}
-                </pre>
-                <div className="flex justify-end border-t border-outline p-2">
-                  <button
-                    type="button"
-                    onClick={copyRawBlocks}
-                    className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-meta text-on-surface ${GLASS_SECONDARY} ${FOCUS_RING}`}
-                  >
-                    <Icon name={copied ? 'check' : 'copy'} className={copied ? 'text-debug-text' : ''} />
-                    {copied ? 'Copied' : 'Copy JSON'}
-                  </button>
-                </div>
-              </div>
-            </details>
-          )}
+        {/* Sits at the bottom of the panel, below the controls, because it is the
+            one input that does nothing until the next Simplify — everything above
+            it repaints the page live. The hint line says so while a page is
+            already simplified. */}
+        <div className="flex flex-col gap-1.5 pb-2">
+          <label htmlFor="distill-task" className="text-meta font-medium text-on-surface-variant">
+            What are you here to read? <span className="font-normal">(optional)</span>
+          </label>
+          <input
+            id="distill-task"
+            type="text"
+            value={task}
+            maxLength={TASK_MAX_LENGTH}
+            placeholder="e.g. the recipe, not the story"
+            onChange={(e) => setTask(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !analyzing && !simplified) simplifyPage()
+            }}
+            aria-describedby="distill-task-hint"
+            className={`w-full rounded-md border border-outline bg-surface px-3 py-2 text-body text-on-surface placeholder:text-on-surface-muted ${FOCUS_RING}`}
+          />
+          <p id="distill-task-hint" className="text-meta text-on-surface-muted">
+            {simplified
+              ? 'Simplify again to apply a change here.'
+              : 'Content matching this is kept; the rest is more likely to be dimmed.'}
+          </p>
         </div>
 
         <footer className="mt-2 flex w-full flex-col items-center gap-2 border-t border-outline pt-4 text-meta text-on-surface-variant">

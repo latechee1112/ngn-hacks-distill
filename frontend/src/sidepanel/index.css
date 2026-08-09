@@ -22,13 +22,6 @@
   /* State color, not an accent. */
   --color-danger-text: #e79a94;
 
-  /* Debug-only. Deliberately loud so the raw-blocks dump never gets mistaken
-     for a shipping control — it is a developer affordance, not part of the UI. */
-  --color-debug: #22c55e;
-  --color-debug-hover: #16a34a;
-  --color-debug-fg: #04240f;
-  --color-debug-text: #4ade80;
-
   --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
 
   /* Type scale: three sizes, line heights on the 4px grid. */
