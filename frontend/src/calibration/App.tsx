@@ -26,13 +26,12 @@ import { PRACTICE_TRIAL, TRIALS } from './trials'
 import { PrimaryButton, QuietButton, Reveal, SecondaryButton, Shell } from './ui'
 import WelcomeScreen from './WelcomeScreen'
 
-// Local dev backend, the same origin the background service worker's
-// analyze-page calls use. Unlike a content script, this page runs at the
-// extension's own chrome-extension:// origin, which is already on the
-// backend's CORS allowlist (see backend/.env's CORS_ORIGINS), so it can
-// call the backend directly instead of proxying through the background
-// worker.
-const BACKEND_URL = 'http://127.0.0.1:8000'
+// Same backend the background service worker's analyze-page calls use (see
+// background.ts). Unlike a content script, this page runs at the extension's own
+// chrome-extension:// origin, which is already on the backend's CORS allowlist (see
+// backend/.env's CORS_ORIGINS), so it can call the backend directly instead of
+// proxying through the background worker.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
 
 async function markDismissed() {
   try {

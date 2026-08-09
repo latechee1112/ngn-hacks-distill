@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Distill — try it yourself</title>
+<meta name="description" content="Install the Distill browser extension and try it on a sample page in under a minute." />
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #1a1a1a;
+    --text-muted: #6b6b6b;
+    --accent: #2f6fb5;
+    --accent-text: #ffffff;
+    --code-bg: #f0efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --surface: #202225;
+      --border: #34363a;
+      --text: #f2f2f0;
+      --text-muted: #a3a3a3;
+      --accent: #6ea8e0;
+      --accent-text: #0e1116;
+      --code-bg: #17181a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 20px 80px; }
+  header { text-align: center; margin-bottom: 40px; }
+  header h1 { font-size: 34px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  header p { color: var(--text-muted); margin: 0; font-size: 16px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  .card h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 0 16px;
+  }
+
+  .qr-row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .qr-row img { width: 168px; height: 168px; border-radius: 8px; background: #fff; padding: 8px; }
+  .qr-row .qr-caption { max-width: 320px; color: var(--text-muted); font-size: 14px; }
+
+  .steps { margin: 0; padding-left: 20px; }
+  .steps li { margin-bottom: 10px; }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.9em;
+  }
+
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 20px 0 4px; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+    border: 1px solid var(--border);
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+  .btn-secondary { background: transparent; color: var(--text); }
+
+  footer { text-align: center; color: var(--text-muted); font-size: 13px; margin-top: 40px; }
+  footer a { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Distill</h1>
+    <p>Simplifies cluttered webpages based on your calibrated visual preferences.</p>
+  </header>
+
+  <div class="card">
+    <h2>Scan to open this page on your phone</h2>
+    <div class="qr-row">
+      <img id="qr" alt="QR code linking to this page" width="168" height="168" />
+      <p class="qr-caption">Or just keep reading — everything below works from this tab too. The code points at
+        whatever URL this page is loaded from.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>1. Install (about 30 seconds)</h2>
+    <ol class="steps">
+      <li>Download the extension: <a href="extension.zip">extension.zip</a>, then unzip it.</li>
+      <li>Open <code>chrome://extensions</code> in Chrome, and turn on <strong>Developer mode</strong> (top right).</li>
+      <li>Click <strong>Load unpacked</strong> and select the unzipped folder.</li>
+      <li>Distill opens a one-time calibration tab — click <strong>Continue without camera</strong> if you'd rather
+        skip straight to trying it (camera calibration personalizes results, but isn't required).</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>2. Try it on a sample page</h2>
+    <p>Open the demo article below — it's deliberately cluttered with ads, sidebars, and a newsletter popup, the
+      kind of page Distill is built for. Click the Distill icon in your toolbar to simplify it.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="demo.html">Open the demo page</a>
+      <a class="btn btn-secondary" href="extension.zip">Download extension.zip</a>
+    </div>
+  </div>
+
+  <footer>
+    Built for a hackathon demo. Source on
+    <a href="https://github.com/latechee1112/ngn-hacks-distill" target="_blank" rel="noopener">GitHub</a>.
+  </footer>
+
+</div>
+
+<script>
+  var url = window.location.href;
+  document.getElementById('qr').src =
+    'https://api.qrserver.com/v1/create-qr-code/?size=336x336&margin=0&data=' + encodeURIComponent(url);
+</script>
+</body>
+</html>

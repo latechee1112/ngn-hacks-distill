@@ -7,6 +7,7 @@
     "dev": "npm run build:watch",
     "dev:ui": "vite",
     "build": "tsc -b && vite build --emptyOutDir && vite build --config vite.background.config.ts && vite build --config vite.content.config.ts",
+    "package": "npm run build && node scripts/package-extension.mjs",
     "build:watch": "concurrently --kill-others-on-fail --names types,ui,background,content \"tsc -b --watch --preserveWatchOutput\" \"vite build --watch\" \"vite build --watch --config vite.background.config.ts\" \"vite build --watch --config vite.content.config.ts\"",
     "lint": "eslint .",
     "preview": "vite preview",

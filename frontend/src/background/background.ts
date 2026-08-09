@@ -1,13 +1,17 @@
 import { ANALYZE_PORT } from '../shared/messaging'
 import type { AnalyzeBackendResult } from '../types/analysis'
 
-// Local dev backend. The fetch must happen here in the service worker, not in the
-// content script - a content script's fetch Origin is the visited page's origin, not
+// The fetch must happen here in the service worker, not in the content script - a
+// content script's fetch Origin is the visited page's origin, not
 // chrome-extension://<id>, so it wouldn't match the backend's CORS allowlist.
-const BACKEND_URL = 'http://127.0.0.1:8000'
-// Generous headroom over the backend's own LLM timeout (45s) plus network overhead -
-// real pages send far more blocks than a quick manual test (a 100+ block Wikipedia
-// page takes much longer for the LLM to classify than a tiny 4-block payload).
+// Defaults to the local dev backend; set VITE_BACKEND_URL at build time (see
+// frontend/.env.production.example) to bake in a deployed backend URL, e.g. for a
+// demo package distributed to people who won't run the backend themselves.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
+// Generous headroom over the backend's own LLM timeout (8s, see backend/config.py's
+// llm_timeout_seconds) plus network overhead - real pages send far more blocks than a
+// quick manual test (a 100+ block Wikipedia page takes much longer for the LLM to
+// classify than a tiny 4-block payload).
 const ANALYZE_TIMEOUT_MS = 60000
 
 chrome.runtime.onInstalled.addListener((details) => {
