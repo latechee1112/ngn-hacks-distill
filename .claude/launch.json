@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:ui", "--prefix", "frontend", "--", "--port", "5199", "--strictPort"],
+      "port": 5199
+    }
+  ]
+}

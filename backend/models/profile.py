@@ -21,4 +21,7 @@ class VisualProfile(BaseModel):
     simplification_strength: float = Field(
         alias="simplificationStrength", ge=0.0, le=1.0
     )
-    source: Literal["calibration", "manual", "default"] = "default"
+    # "usage" is the frontend's passively-derived profile (content/usageTracker.ts):
+    # built from ordinary browsing rather than the calibration wizard, but the
+    # same shape and treated identically everywhere downstream.
+    source: Literal["calibration", "usage", "manual", "default"] = "default"

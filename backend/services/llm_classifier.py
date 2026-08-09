@@ -51,6 +51,21 @@ without being it is S.
 - If pageHasSensitiveForms is true, be conservative with form/input blocks - prefer S over D.
 - When genuinely unsure, omit the block rather than guessing - this is an accessibility aid, \
 so err conservative.
+
+The request carries a "userProfile" describing how THIS reader actually reads, measured from \
+a calibration session or from their browsing. Two people can correctly get different answers \
+for the same page. Apply it:
+- attentionBudget is roughly how many blocks this reader can hold at once. Mark at most that \
+many blocks E; if more compete, keep only the strongest as E and make the rest S.
+- simplificationStrength is 0-1. At 0.7 or above, a borderline block goes D. At 0.3 or below, \
+a borderline block stays S. In between, omit it.
+- sensitiveToMotion true: carousels, autoplaying or animated media, and tickers go D even \
+when they sit inside the main content.
+- readsInSections true: this reader is shown one section at a time, so be stricter about E - \
+prefer a small number of clearly-primary blocks.
+- preferredRegion names the side of the page this reader's attention favours (roughPosition.x \
+below 0.33 is left, above 0.66 is right). A block on the opposite side needs to be clearly \
+primary content to be E; otherwise prefer S or D.
 """
 
 # Maps the response keys to real labels. Safety-critical is deliberately absent:
@@ -145,6 +160,27 @@ def _project_for_llm(block: PageBlock, index: int = 0) -> dict:
     return projected
 
 
+def _project_profile_for_llm(profile: VisualProfile) -> dict:
+    """The profile as classification signal, renamed to what it means.
+
+    Only the fields that can legitimately change a *label* are sent. text_scale,
+    spacing_multiplier and contrast_mode are deliberately excluded: they change
+    how a kept block is rendered, not whether it is worth keeping, so feeding
+    them here would spend tokens implying an influence they do not have.
+
+    The renaming is not cosmetic - "maxVisibleBlocks" reads as a layout cap the
+    model cannot act on, while "attentionBudget" states the thing the prompt
+    actually asks it to ration.
+    """
+    return {
+        "attentionBudget": profile.max_visible_blocks,
+        "simplificationStrength": profile.simplification_strength,
+        "sensitiveToMotion": profile.reduce_motion,
+        "readsInSections": profile.progressive_reveal,
+        "preferredRegion": profile.preferred_region,
+    }
+
+
 def _build_user_payload(
     blocks: List[PageBlock],
     profile: VisualProfile,
@@ -154,7 +190,7 @@ def _build_user_payload(
     sanitized = [_project_for_llm(b, i) for i, b in enumerate(blocks)]
     payload = {
         "task": task or "General browsing - reduce visual clutter.",
-        "simplificationStrength": profile.simplification_strength,
+        "userProfile": _project_profile_for_llm(profile),
         "pageHasSensitiveForms": has_sensitive_forms,
         "blocks": sanitized,
     }

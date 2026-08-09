@@ -3,6 +3,7 @@ import type { GazeResult } from 'webeyetrack'
 import Icon from '../sidepanel/Icon'
 import {
   CALIBRATION_STORAGE_KEY,
+  USER_NAME_MAX_LENGTH,
   type CalibrationProfileResponse,
   type CalibrationTrial,
   type GazeSummary,
@@ -39,13 +40,17 @@ async function markDismissed() {
   }
 }
 
-async function storeResult(response: CalibrationProfileResponse) {
+async function storeResult(response: CalibrationProfileResponse, userName: string) {
   const record: StoredCalibration = {
     profile: response.profile,
     explanation: response.explanation,
     completedAt: Date.now(),
     dismissed: false,
   }
+  // Omitted rather than stored as "" when blank, so consumers can test for the
+  // field itself instead of having to treat empty string as absent.
+  const trimmed = userName.trim().slice(0, USER_NAME_MAX_LENGTH)
+  if (trimmed) record.userName = trimmed
   await chrome.storage.local.set({ [CALIBRATION_STORAGE_KEY]: record })
 }
 
@@ -141,6 +146,9 @@ function App() {
   // free to pick another.
   const [importError, setImportError] = useState('')
   const [importedFromFile, setImportedFromFile] = useState(false)
+  // Purely a display label for the popup's profile card - nothing reads it to
+  // make a decision, and leaving it blank changes nothing but the wording there.
+  const [userName, setUserName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [gazeSaveNote, setGazeSaveNote] = useState('')
 
@@ -420,7 +428,7 @@ function App() {
       }
       const data = (await response.json()) as CalibrationProfileResponse
       console.log('[Distill] calibration profile result', data)
-      await storeResult(data)
+      await storeResult(data, userName)
       setResult(data)
       setStep('results')
     } catch (err) {
@@ -457,7 +465,7 @@ function App() {
       explanation: parsed.file.explanation,
     }
     try {
-      await storeResult(response)
+      await storeResult(response, userName)
     } catch (err) {
       // Reported rather than swallowed: without the storage write the profile
       // exists only in this tab's memory, so the extension would carry on
@@ -516,6 +524,28 @@ function App() {
           A few quick tasks (about a minute) tell Distill how you scan a page, so it can pick spacing, contrast,
           and motion settings that actually work for you — instead of one-size-fits-all defaults.
         </p>
+        {/* Optional, and deliberately only a label: the profile card in the
+            extension popup says whose profile is loaded, and "Calibrated to
+            Sam" reads as yours in a way "Calibrated profile" does not. Nothing
+            downstream branches on it. */}
+        <div className="flex w-full max-w-sm flex-col gap-1.5 text-left">
+          <label htmlFor="distill-user-name" className="text-meta font-medium text-on-surface-variant">
+            What should we call you? <span className="font-normal">(optional)</span>
+          </label>
+          <input
+            id="distill-user-name"
+            type="text"
+            value={userName}
+            maxLength={USER_NAME_MAX_LENGTH}
+            placeholder="Your name"
+            autoComplete="given-name"
+            onChange={(e) => setUserName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setStep('camera')
+            }}
+            className={`w-full rounded-md border border-outline bg-surface px-3 py-2 text-body text-on-surface placeholder:text-on-surface-muted ${FOCUS_RING}`}
+          />
+        </div>
         <div className="flex gap-3">
           <PrimaryButton onClick={() => setStep('camera')}>Get started</PrimaryButton>
           <SecondaryButton onClick={handleSkip}>Skip for now</SecondaryButton>

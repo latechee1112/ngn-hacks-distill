@@ -10,11 +10,14 @@ from typing import Dict, List
 from models.common import BlockAction, ClassificationLabel, PageBlock
 from models.profile import VisualProfile
 from services.llm_classifier import RawClassification
-from services.rule_engine import action_for_category, reason_for_category
+from services.rule_engine import build_action, fallback_action
 
 
 class LLMValidationError(Exception):
     """Raised when the LLM's classification response is invalid or unsafe."""
+
+
+_VALID_LABELS = {label.value for label in ClassificationLabel}
 
 
 def validate_and_build_actions(
@@ -33,15 +36,13 @@ def validate_and_build_actions(
             raise LLMValidationError(f"LLM invented unknown block ID: {c.blockId}")
         if c.blockId in seen_ids and seen_ids[c.blockId] != c.label:
             raise LLMValidationError(f"Duplicate contradictory classification for block: {c.blockId}")
+        # Checked here rather than left to ClassificationLabel() in the build
+        # loop below: an unrecognized label is a bad LLM response, which the
+        # caller handles by falling back to the rule engine - not a ValueError
+        # escaping as a 500 and costing the page its analysis entirely.
+        if c.label not in _VALID_LABELS:
+            raise LLMValidationError(f"LLM returned unknown label for {c.blockId}: {c.label!r}")
         seen_ids[c.blockId] = c.label
-
-    priority_by_label = {
-        ClassificationLabel.SAFETY_CRITICAL: 1,
-        ClassificationLabel.ESSENTIAL: 2,
-        ClassificationLabel.SUPPORTING: 5,
-        ClassificationLabel.UNCERTAIN: 5,
-        ClassificationLabel.DISTRACTING: 8,
-    }
 
     actions: List[BlockAction] = []
     classified_ids = set()
@@ -52,32 +53,17 @@ def validate_and_build_actions(
         classified_ids.add(c.blockId)
 
         block = blocks_by_id[c.blockId]
-        label = ClassificationLabel(c.label)
 
-        if label != ClassificationLabel.SAFETY_CRITICAL and block.is_safety_critical():
-            # The rule engine's hard safety classification always wins.
-            label = ClassificationLabel.SAFETY_CRITICAL
+        # The LLM's label is only ever a *proposal*. build_action() is the
+        # single chokepoint shared with the rule engine: it re-derives
+        # Safety-critical from the block's own flags (so a password/payment/
+        # consent/warning block is protected no matter what came back), and it
+        # clamps the resulting action so COLLAPSE can never be emitted. Neither
+        # guarantee depends on the LLM having been right.
+        actions.append(build_action(block, ClassificationLabel(c.label), profile))
 
-        # action_for_category never returns COLLAPSE at all - the LLM/rule
-        # classification can only dim content, never fully remove it - so
-        # nothing here can end up hidden regardless of what label the LLM assigned.
-        action = action_for_category(label, block, profile)
-
-        actions.append(
-            BlockAction(
-                blockId=c.blockId,
-                action=action,
-                priority=priority_by_label[label],
-                # The LLM is no longer asked for a reason; this is filled from
-                # the canned table, seeded on block ID so same-label blocks on
-                # one page don't all read identically.
-                reason=reason_for_category(label, c.blockId)[:200],
-            )
-        )
-
-    # Blocks the LLM didn't mention fall back to the rule engine individually.
-    from services.rule_engine import fallback_action
-
+    # Blocks the LLM didn't mention fall back to the rule engine individually -
+    # itself just another build_action() call, so they get the same guarantees.
     for block in blocks:
         if block.block_id not in classified_ids:
             actions.append(fallback_action(block, profile))

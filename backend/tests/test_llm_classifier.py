@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,7 +7,9 @@ from config import Settings
 from models.common import PageBlock
 from models.profile import VisualProfile
 from services.llm_classifier import (
+    _SYSTEM_PROMPT,
     _TEXT_PREVIEW_MAX,
+    _build_user_payload,
     LLMClassificationError,
     _project_for_llm,
     classify_blocks,
@@ -260,3 +263,69 @@ def test_projection_drops_safety_flags_and_truncates_text():
 def test_projection_omits_position_when_block_has_no_bounding_box():
     projected = _project_for_llm(PageBlock(blockId="b1", tag="p", text="hi"))
     assert "roughPosition" not in projected
+
+
+def test_profile_reaches_the_request_as_classification_signal():
+    """The profile must be an *input to the label*, not just post-hoc layout.
+
+    Two users differ here or they differ nowhere: this is the only place a
+    profile can change what a block is classified as.
+    """
+    profile = make_profile()
+    profile.max_visible_blocks = 6
+    profile.simplification_strength = 0.85
+    profile.reduce_motion = True
+    profile.progressive_reveal = True
+    profile.preferred_region = "left"
+
+    payload = json.loads(_build_user_payload(make_blocks(), profile, None, False))
+
+    assert payload["userProfile"] == {
+        "attentionBudget": 6,
+        "simplificationStrength": 0.85,
+        "sensitiveToMotion": True,
+        "readsInSections": True,
+        "preferredRegion": "left",
+    }
+    # Rendering-only fields carry no classification meaning, so sending them
+    # would imply an influence the prompt never asks the model to apply.
+    assert "textScale" not in payload["userProfile"]
+    assert "spacingMultiplier" not in payload["userProfile"]
+    assert "contrastMode" not in payload["userProfile"]
+
+
+def test_two_profiles_produce_different_requests_for_the_same_page():
+    blocks = make_blocks()
+    light = make_profile()
+    light.simplification_strength = 0.2
+    light.max_visible_blocks = 12
+
+    heavy = make_profile()
+    heavy.simplification_strength = 0.9
+    heavy.max_visible_blocks = 4
+
+    assert _build_user_payload(blocks, light, None, False) != _build_user_payload(
+        blocks, heavy, None, False
+    )
+
+
+def test_system_prompt_tells_the_model_how_to_use_the_profile():
+    """A profile in the payload the prompt never mentions is decoration."""
+    for key in ("attentionBudget", "simplificationStrength", "sensitiveToMotion",
+                "readsInSections", "preferredRegion"):
+        assert key in _SYSTEM_PROMPT
+
+
+def test_stated_task_reaches_the_request_verbatim():
+    """The prompt tells the model to judge relevance against the user's task,
+    so the task actually arriving is the difference between that rule meaning
+    something and it being dead text."""
+    payload = json.loads(
+        _build_user_payload(make_blocks(), make_profile(), "the recipe, not the story", False)
+    )
+    assert payload["task"] == "the recipe, not the story"
+
+
+def test_absent_task_falls_back_to_the_generic_browsing_task():
+    payload = json.loads(_build_user_payload(make_blocks(), make_profile(), None, False))
+    assert payload["task"] == "General browsing - reduce visual clutter."

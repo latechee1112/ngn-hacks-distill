@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import ToggleSwitch from './ToggleSwitch'
 import Icon from './Icon'
-import type { SimplifyResponse } from '../types/analysis'
+import type { SimplifyResponse, VisualProfile } from '../types/analysis'
 import { CALIBRATION_STORAGE_KEY, type StoredCalibration } from '../types/calibration'
+import { loadStoredCalibration, resolveProfile, type ResolvedProfile } from '../shared/profile'
 
 async function getActiveTabId(): Promise<number | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -39,30 +40,17 @@ const FOCUS_RING =
 const GLASS = 'backdrop-blur-md backdrop-saturate-150 border transition-colors'
 const GLASS_SECONDARY = `${GLASS} border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/15`
 const GLASS_ACCENT = `${GLASS} border-accent-text/30 bg-accent/55 hover:bg-accent/70`
-// No fill at rest — the glass only condenses in on hover/focus, for the one button
-// that's meant to read as the lowest-emphasis action in the panel.
-const GLASS_GHOST =
-  'border border-transparent transition-colors hover:border-white/10 hover:bg-white/6 hover:backdrop-blur-md hover:backdrop-saturate-150'
 
 // The panel unmounts every time it closes, so the Simplification Controls have
 // to persist somewhere. chrome.storage.local (the "storage" permission is
 // already in the manifest) keeps them across opens and across browser restarts.
 const SETTINGS_KEY = 'distillSettings'
 
-// Mirrors the backend's AnalyzePageRequest.task bound (max_length=300). Over it
-// the whole request 422s, so it is enforced at the input rather than discovered
-// on submit.
-export const TASK_MAX_LENGTH = 300
-
 interface StoredSettings {
   intensity: number // 1-100, as shown on the slider
   reduceMotion: boolean
   largerText: boolean
   reduceColorVariation: boolean
-  // What the user came to this page to do. Free text, empty by default; the
-  // backend substitutes its own generic string when this is blank, so an empty
-  // box behaves exactly as the panel did before this existed.
-  task: string
 }
 
 const DEFAULT_SETTINGS: StoredSettings = {
@@ -77,7 +65,39 @@ const DEFAULT_SETTINGS: StoredSettings = {
   reduceMotion: false,
   largerText: true,
   reduceColorVariation: false,
-  task: '',
+}
+
+// 1.15 -> "1.15x", 1 -> "1x". toFixed alone leaves a trailing zero ("1.10x"),
+// which reads as more precision than the rules behind it actually carry.
+function scaleLabel(value: number): string {
+  return `${Number(value.toFixed(2))}x`
+}
+
+// The card's second line, built from the profile actually in force. Every part
+// is read off the profile - there is nothing hardcoded here, which is the whole
+// point: this line used to be a fixed string that said the same thing for a
+// calibrated user, an uncalibrated one, and everyone in between.
+function describeProfile(profile: VisualProfile): string {
+  const parts = [
+    `Spacing +${Math.round((profile.spacingMultiplier - 1) * 100)}%`,
+    `Text ${scaleLabel(profile.textScale)}`,
+    profile.contrastMode === 'enhanced' ? 'Enhanced contrast' : 'Standard contrast',
+    `Up to ${profile.maxVisibleBlocks} blocks`,
+  ]
+  if (profile.reduceMotion) parts.push('Reduced motion')
+  if (profile.progressiveReveal) parts.push('Section by section')
+  return parts.join(' · ')
+}
+
+// Names the profile honestly rather than implying calibration that never
+// happened. A passively-derived profile is real personalization and says so; a
+// default one admits it is a default.
+function profileHeading(resolved: ResolvedProfile): string {
+  if (resolved.origin === 'calibration') {
+    return resolved.userName ? `Calibrated to ${resolved.userName}` : 'Your calibrated profile'
+  }
+  if (resolved.origin === 'usage') return 'Learned from your browsing'
+  return 'Default profile'
 }
 
 async function loadSettings(): Promise<StoredSettings> {
@@ -103,23 +123,23 @@ function App() {
   const [intensity, setIntensity] = useState(DEFAULT_SETTINGS.intensity)
   const [reduceMotion, setReduceMotion] = useState(DEFAULT_SETTINGS.reduceMotion)
   const [largerText, setLargerText] = useState(DEFAULT_SETTINGS.largerText)
-  const [task, setTask] = useState(DEFAULT_SETTINGS.task)
   // Guards the persist effect below: without it the first render would write
   // the defaults over whatever was stored before load() resolves.
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+
+  // The profile actually in force, resolved by the same shared helper the
+  // content script uses - so this card and the simplification it describes can
+  // never disagree about which profile won. null only until the first load
+  // resolves, which is why the card renders nothing rather than a placeholder.
+  const [resolvedProfile, setResolvedProfile] = useState<ResolvedProfile | null>(null)
 
   // Shown until the user either finishes or explicitly dismisses the
   // calibration wizard (src/calibration/App.tsx) — starts hidden so it
   // doesn't flash on before the storage check below resolves.
   const [showCalibrationBanner, setShowCalibrationBanner] = useState(false)
   async function checkCalibrationStatus() {
-    try {
-      const stored = await chrome.storage.local.get(CALIBRATION_STORAGE_KEY)
-      const record = stored?.[CALIBRATION_STORAGE_KEY] as StoredCalibration | undefined
-      setShowCalibrationBanner(!record?.profile && !record?.dismissed)
-    } catch {
-      setShowCalibrationBanner(false)
-    }
+    const record = await loadStoredCalibration()
+    setShowCalibrationBanner(!record?.profile && !record?.dismissed)
   }
 
   function openCalibration() {
@@ -182,10 +202,13 @@ function App() {
       setIntensity(stored.intensity)
       setReduceMotion(stored.reduceMotion)
       setLargerText(stored.largerText)
-      setTask(stored.task)
       setColorReductionActive(stored.reduceColorVariation)
       await refreshStatus()
       await checkCalibrationStatus()
+      // Last, and not awaited alongside the others: the usage tier reads a
+      // second storage key and derives from it, so it is the slowest of the
+      // three lookups and the card is the least urgent thing on screen.
+      setResolvedProfile(await resolveProfile())
       setSettingsLoaded(true)
     }
     init()
@@ -194,11 +217,9 @@ function App() {
   useEffect(() => {
     if (!settingsLoaded) return
     chrome.storage.local
-      .set({
-        [SETTINGS_KEY]: { intensity, reduceMotion, largerText, reduceColorVariation: colorReductionActive, task },
-      })
+      .set({ [SETTINGS_KEY]: { intensity, reduceMotion, largerText, reduceColorVariation: colorReductionActive } })
       .catch(() => { })
-  }, [settingsLoaded, intensity, reduceMotion, largerText, colorReductionActive, task])
+  }, [settingsLoaded, intensity, reduceMotion, largerText, colorReductionActive])
 
   async function simplifyPage() {
     setError('')
@@ -217,10 +238,6 @@ function App() {
           reduceMotion,
           largerText,
           reduceColorVariation: colorReductionActive,
-          // Trimmed here rather than on every keystroke, so the box keeps the
-          // trailing space someone is mid-sentence on. Blank sends nothing and
-          // the backend falls back to its generic browsing task.
-          task: task.trim(),
         },
       })
       // The content script rolls the page back before reporting a failure, so the
@@ -419,13 +436,6 @@ function App() {
           </button>
           <button
             type="button"
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-body font-medium text-on-surface ${GLASS_SECONDARY} ${FOCUS_RING}`}
-          >
-            <Icon name="sliders" />
-            View Settings
-          </button>
-          <button
-            type="button"
             onClick={openCalibration}
             className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-body font-medium text-on-surface ${GLASS_SECONDARY} ${FOCUS_RING}`}
           >
@@ -444,17 +454,30 @@ function App() {
           </p>
         )}
 
-        <div className="rounded-md border border-outline bg-surface p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <Icon name="user" className="text-on-surface-variant" />
-            <h3 className="text-body font-medium text-on-surface">
-              Calibrated to Chenyu Lu
-            </h3>
+        {/* Every value here is read off the profile that will actually be used
+            (resolveProfile(), shared with the content script). Rendered only
+            once resolved — a card that guesses while loading would flash the
+            wrong profile name, which is the exact failure this replaced. */}
+        {resolvedProfile && (
+          <div className="rounded-md border border-outline bg-surface p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <Icon name="user" className="text-on-surface-variant" />
+              <h3 className="text-body font-medium text-on-surface">{profileHeading(resolvedProfile)}</h3>
+            </div>
+            <p className="text-meta text-on-surface-variant">{describeProfile(resolvedProfile.profile)}</p>
+            {/* The rule that fired, in the backend's own words. One line: the
+                card is a summary, and the full list lives on the wizard's
+                results screen. */}
+            {resolvedProfile.explanation.length > 0 && (
+              <p className="mt-2 text-meta text-on-surface-muted">{resolvedProfile.explanation[0]}</p>
+            )}
+            {resolvedProfile.origin === 'default' && (
+              <p className="mt-2 text-meta text-on-surface-muted">
+                Calibrate, or just keep browsing — Distill builds a profile from how you read.
+              </p>
+            )}
           </div>
-          <p className="text-meta text-on-surface-variant">
-            Spacing: +10% · Text: 1.05x · Monochrome Text
-          </p>
-        </div>
+        )}
 
         <div>
           <h2 className="mb-2 text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">
@@ -526,44 +549,6 @@ function App() {
               </label>
             </div>
           </div>
-        </div>
-
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-body text-on-surface-variant hover:text-on-surface ${GLASS_GHOST} ${FOCUS_RING}`}
-          >
-            <Icon name="expand" />
-            Show everything temporarily
-          </button>
-        </div>
-
-        {/* Sits at the bottom of the panel, below the controls, because it is the
-            one input that does nothing until the next Simplify — everything above
-            it repaints the page live. The hint line says so while a page is
-            already simplified. */}
-        <div className="flex flex-col gap-1.5 pb-2">
-          <label htmlFor="distill-task" className="text-meta font-medium text-on-surface-variant">
-            What are you here to read? <span className="font-normal">(optional)</span>
-          </label>
-          <input
-            id="distill-task"
-            type="text"
-            value={task}
-            maxLength={TASK_MAX_LENGTH}
-            placeholder="e.g. the recipe, not the story"
-            onChange={(e) => setTask(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !analyzing && !simplified) simplifyPage()
-            }}
-            aria-describedby="distill-task-hint"
-            className={`w-full rounded-md border border-outline bg-surface px-3 py-2 text-body text-on-surface placeholder:text-on-surface-muted ${FOCUS_RING}`}
-          />
-          <p id="distill-task-hint" className="text-meta text-on-surface-muted">
-            {simplified
-              ? 'Simplify again to apply a change here.'
-              : 'Content matching this is kept; the rest is more likely to be dimmed.'}
-          </p>
         </div>
 
         <footer className="mt-2 flex w-full flex-col items-center gap-2 border-t border-outline pt-4 text-meta text-on-surface-variant">

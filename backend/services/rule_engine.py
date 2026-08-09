@@ -3,12 +3,21 @@
 Pure, deterministic functions - no network calls, no LLM. This is the
 safety net: it always produces a valid result, so the API can degrade to
 it whenever the LLM is unavailable or returns something invalid.
+
+build_action() at the bottom of this file is the ONE function that turns a
+proposed label into a BlockAction, and it is the only place in the backend
+that constructs one. Both classifiers - these rules and the LLM path in
+services.validation - go through it, so the protection contract below is a
+property of the code's shape rather than of either classifier's accuracy.
 """
 
+import logging
 from zlib import crc32
 
-from models.common import ActionType, ClassificationLabel, PageBlock
+from models.common import ActionType, BlockAction, ClassificationLabel, PageBlock
 from models.profile import VisualProfile
+
+logger = logging.getLogger("focusfit.rule_engine")
 
 _MAIN_LANDMARKS = {"main", "article"}
 _LOW_RELEVANCE_LANDMARKS = {"nav", "aside", "footer"}
@@ -23,11 +32,22 @@ _PRIORITY_BY_CATEGORY = {
 }
 
 
-def classify_block(block: PageBlock) -> ClassificationLabel:
-    """Step 1: obvious rules, applied before any LLM call."""
+def resolve_label(block: PageBlock, proposed: ClassificationLabel) -> ClassificationLabel:
+    """The single place a *proposed* label becomes a *final* one.
 
+    Safety-critical is never anyone's opinion - not the rules', not the LLM's.
+    It is re-derived here from the block's own flags (is_safety_critical(): a
+    password field, a payment field, a consent control, a warning) and
+    overrides whatever was proposed. Both classifiers reach this through
+    build_action(), so neither can route around it.
+    """
     if block.is_safety_critical():
         return ClassificationLabel.SAFETY_CRITICAL
+    return proposed
+
+
+def _classify_by_rules(block: PageBlock) -> ClassificationLabel:
+    """The rules' *proposal* only - the safety override lives in resolve_label()."""
 
     if block.is_form_instruction:
         return ClassificationLabel.SUPPORTING
@@ -57,6 +77,16 @@ def classify_block(block: PageBlock) -> ClassificationLabel:
         return ClassificationLabel.SUPPORTING
 
     return ClassificationLabel.UNCERTAIN
+
+
+def classify_block(block: PageBlock) -> ClassificationLabel:
+    """Step 1: obvious rules, applied before any LLM call.
+
+    Still returns Safety-critical for a safety-critical block, exactly as
+    before - but via resolve_label() rather than its own copy of the check,
+    so there is one implementation of that rule in the codebase.
+    """
+    return resolve_label(block, _classify_by_rules(block))
 
 
 def needs_llm_review(block: PageBlock) -> bool:
@@ -170,19 +200,57 @@ def reason_for_category(category: ClassificationLabel, seed: str = "") -> str:
     return variants[crc32(seed.encode("utf-8")) % len(variants)]
 
 
-def fallback_action(block: PageBlock, profile: VisualProfile):
-    """Step 4: full rule-only action for a single block."""
-    from models.common import BlockAction
+def build_action(
+    block: PageBlock, proposed: ClassificationLabel, profile: VisualProfile
+) -> BlockAction:
+    """The only place in the backend that constructs a BlockAction.
 
-    category = classify_block(block)
-    action = action_for_category(category, block, profile)
-    priority = _PRIORITY_BY_CATEGORY[category]
+    Every classification - rule-derived or LLM-derived - is funnelled through
+    here, which is what makes the protection contract structural rather than
+    statistical. Two things are enforced, in this order:
+
+      1. resolve_label() re-derives Safety-critical from the block's own
+         flags, overriding whatever was proposed.
+      2. The resulting action is clamped so COLLAPSE (display:none) can never
+         leave this function, whatever action_for_category() decides and
+         whatever simplification_strength the profile carries.
+
+    The clamp is deliberately fail-safe rather than fail-loud: this is an
+    accessibility aid, so a future edit that wires collapse into
+    action_for_category() should degrade to a dimmed page and a loud log line,
+    not a 500 that leaves the user with no simplification at all. The log line
+    is the signal; test_no_label_can_ever_produce_collapse is what should
+    actually catch it, before it ships.
+    """
+    label = resolve_label(block, proposed)
+    action = action_for_category(label, block, profile)
+
+    if action is ActionType.COLLAPSE:
+        logger.error(
+            "block_id=%s label=%s action_for_category returned COLLAPSE - the backend's "
+            "classification must never fully remove content. Clamping.",
+            block.block_id,
+            label.value,
+        )
+        action = (
+            ActionType.KEEP
+            if label is ClassificationLabel.SAFETY_CRITICAL
+            else ActionType.DEEMPHASIZE
+        )
+
     return BlockAction(
         blockId=block.block_id,
         action=action,
-        priority=priority,
-        reason=reason_for_category(category, block.block_id),
+        priority=_PRIORITY_BY_CATEGORY[label],
+        # Seeded on block ID so same-label blocks on one page don't all read
+        # identically, and so the same page produces the same text every run.
+        reason=reason_for_category(label, block.block_id)[:200],
     )
+
+
+def fallback_action(block: PageBlock, profile: VisualProfile) -> BlockAction:
+    """Step 4: full rule-only action for a single block."""
+    return build_action(block, _classify_by_rules(block), profile)
 
 
 def fallback_actions(blocks: list[PageBlock], profile: VisualProfile) -> list:

@@ -44,10 +44,17 @@ export interface CalibrationProfileResponse {
 // the whole point is that it applies no matter what page you're on.
 export const CALIBRATION_STORAGE_KEY = 'distillCalibrationProfile'
 
+// What the user asked to be called, from the wizard's welcome screen. Optional
+// throughout: it is a display label for the popup's profile card and nothing
+// reads it to make a decision, so every consumer must render a sensible card
+// without it (a profile loaded from a file or derived from browsing has none).
+export const USER_NAME_MAX_LENGTH = 40
+
 export interface StoredCalibration {
   profile?: VisualProfile
   explanation?: string[]
   completedAt?: number
+  userName?: string
   // Set when the user explicitly skips, so the popup's "Finish setup"
   // banner doesn't nag every time it's reopened.
   dismissed: boolean

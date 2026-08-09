@@ -1,6 +1,5 @@
 import { ANALYZE_PORT } from '../shared/messaging'
 import type { AnalyzeBackendResult, SimplifyResponse, VisualProfile } from '../types/analysis'
-import { DEFAULT_PROFILE, loadCalibratedProfile } from './defaultProfile'
 import { extractPage } from './extract'
 import { startScanAnimation } from './scanAnimation'
 import {
@@ -28,7 +27,8 @@ import {
   setReduceMotion,
   type SimplifyResult,
 } from './simplify'
-import { loadUsageProfile, startUsageTracking } from './usageTracker'
+import { DEFAULT_PROFILE, resolveProfile } from '../shared/profile'
+import { startUsageTracking } from './usageTracker'
 
 console.log('[Distill] content script injected on', window.location.href)
 
@@ -44,10 +44,6 @@ export interface SimplifySettings {
   reduceMotion: boolean
   largerText: boolean
   reduceColorVariation: boolean
-  // What the user said they came to read, from the panel's task box. Empty means
-  // "no stated task" — the backend substitutes a generic browsing task, which is
-  // what every request sent before this field existed effectively carried.
-  task: string
 }
 
 // Used when the sidepanel sends no settings (older panel build, or a simplify
@@ -57,7 +53,6 @@ const FALLBACK_SETTINGS: SimplifySettings = {
   reduceMotion: DEFAULT_PROFILE.reduceMotion,
   largerText: false,
   reduceColorVariation: false,
-  task: '',
 }
 
 // Calibration result (if any) is the base; the sidepanel's live Simplification
@@ -67,25 +62,14 @@ const FALLBACK_SETTINGS: SimplifySettings = {
 // larger text (settings.largerText, applied separately via setLargerText()) is
 // its own independent axis now, not a stand-in for paragraph/list spacing.
 //
-// Three tiers, most-earned first:
-//   1. Calibration — the user sat through the wizard. Measured under controlled
-//      conditions with known decoys, so it outranks everything below.
-//   2. Usage — derived from ordinary browsing (usageTracker.ts). Only returned
-//      once there is enough evidence to mean anything; null until then.
-//   3. DEFAULT_PROFILE — nothing observed yet.
+// resolveProfile() picks the base (calibration > usage > default) and is shared
+// with the popup, so the card it shows and the profile applied here can never
+// disagree about which one is in force.
 async function profileFor(settings: SimplifySettings): Promise<VisualProfile> {
-  const calibrated = await loadCalibratedProfile()
-  let base = calibrated
-  if (!base) {
-    const usage = await loadUsageProfile()
-    if (usage) {
-      console.log('[Distill] no calibration stored, using passively-derived profile:', usage.explanation)
-      base = usage.profile
-    }
-  }
-  base = base ?? DEFAULT_PROFILE
+  const resolved = await resolveProfile()
+  console.log(`[Distill] profile source: ${resolved.origin}`, resolved.explanation)
   return {
-    ...base,
+    ...resolved.profile,
     simplificationStrength: settings.simplificationStrength,
     reduceMotion: settings.reduceMotion,
   }
@@ -110,17 +94,8 @@ async function profileFor(settings: SimplifySettings): Promise<VisualProfile> {
 const HEARTBEAT_TIMEOUT_MS = 20000
 const ANALYSIS_HARD_TIMEOUT_MS = 70000
 
-// Mirror of the backend's AnalyzePageRequest.task bound. The panel's input already
-// enforces it, but a value over it fails the *whole request* with 422 — losing the
-// page's entire analysis over a too-long sentence — and the panel is not the only
-// thing that can send DISTILL_SIMPLIFY. Same reasoning as extract.ts's TAG_MAX.
-const TASK_MAX_LENGTH = 300
-
-function requestBackendAnalysis(profile: VisualProfile, task: string): Promise<AnalyzeBackendResult> {
+function requestBackendAnalysis(profile: VisualProfile): Promise<AnalyzeBackendResult> {
   const extraction = extractPage()
-  // Omitted entirely when blank rather than sent as "", so the backend's own
-  // Optional[str] default is what applies.
-  const trimmed = task.trim().slice(0, TASK_MAX_LENGTH)
 
   return new Promise((resolve) => {
     let settled = false
@@ -181,10 +156,7 @@ function requestBackendAnalysis(profile: VisualProfile, task: string): Promise<A
     )
     armWatchdog()
 
-    port.postMessage({
-      type: 'analyze',
-      payload: { ...extraction, profile, ...(trimmed ? { task: trimmed } : {}) },
-    })
+    port.postMessage({ type: 'analyze', payload: { ...extraction, profile } })
   })
 }
 
@@ -206,7 +178,7 @@ async function handleSimplify(settings: SimplifySettings): Promise<SimplifyResul
     `[Distill] pre-filter hid ${prefiltered.adsHidden} ad/sponsored block(s) before analysis (nothing is blurred until it returns)`,
   )
 
-  const result = await requestBackendAnalysis(await profileFor(settings), settings.task)
+  const result = await requestBackendAnalysis(await profileFor(settings))
 
   let outcome: SimplifyResult
   if (result.ok) {

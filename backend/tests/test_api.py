@@ -113,3 +113,41 @@ def test_extremely_long_tag_is_clamped_to_the_field_bound():
 
     block = PageBlock(blockId="ff-1", tag="custom-element-" + "x" * 500)
     assert len(block.tag) == 64
+
+
+def test_analyze_page_accepts_a_stated_task(client):
+    resp = client.post(
+        "/v1/analyze-page",
+        json={
+            "profile": _profile(),
+            "task": "the recipe, not the story",
+            "blocks": [{"blockId": "b1", "tag": "main", "landmark": "main", "text": "content"}],
+        },
+    )
+    assert resp.status_code == 200
+
+
+def test_analyze_page_rejects_an_over_length_task(client):
+    """The frontend caps the task at 300 in two places (the input's maxLength and
+    content.ts's slice) precisely because going over costs the page its whole
+    analysis, not just the task - this is the behaviour those caps defend against."""
+    resp = client.post(
+        "/v1/analyze-page",
+        json={
+            "profile": _profile(),
+            "task": "x" * 301,
+            "blocks": [{"blockId": "b1", "tag": "main", "landmark": "main", "text": "content"}],
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_analyze_page_accepts_a_passively_derived_profile(client):
+    resp = client.post(
+        "/v1/analyze-page",
+        json={
+            "profile": _profile(source="usage"),
+            "blocks": [{"blockId": "b1", "tag": "main", "landmark": "main", "text": "content"}],
+        },
+    )
+    assert resp.status_code == 200
