@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Same design tokens as sidepanel/index.css - copied rather than imported,
+/* Same design tokens as sidepanel/index.css, copied rather than imported,
    since that file's `body` rule is popup-sized (fixed 380x600) and this is
    a full browser tab. */
 @theme {
@@ -24,7 +24,7 @@
   --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
 
   /* Deliberately NOT the sidepanel's scale, unlike the color tokens above.
-     Those were copied wholesale from sidepanel/index.css, type included -
+     Those were copied wholesale from sidepanel/index.css, type included,
      but that file is sized for a 380x600 popup, and this is a full browser
      tab. 13px body copy in a full-width wizard is small for anyone and
      actively hostile to the low-vision / visual-processing audience this
@@ -38,7 +38,7 @@
   --text-title: 28px;
   --text-title--line-height: 36px;
   /* Hero measure for the two intro screens only. The wizard's own step
-     headings stay on --text-title - a display size on a task screen would
+     headings stay on --text-title, because a display size on a task screen would
      pull attention away from the task itself, which is the thing being
      measured. */
   --text-display: 44px;
@@ -66,7 +66,7 @@ body {
 /* ---------------------------------------------------------------------------
    Onboarding motion.
 
-   Everything below is transform/opacity only and single-shot - the intro
+   Everything below is transform/opacity only and single-shot. The intro
    screens are the one place in this app where motion is decoration, and even
    there it has to stay off the main thread, because gaze inference starts
    two screens later and shares it. All of it is disabled under
@@ -97,7 +97,7 @@ body {
 /* Direction-aware step transition. The content block is keyed on the step in
    ui.tsx's <Shell>, so React remounts it and the animation replays; data-dir
    is set from which way the wizard is moving, so going back reads as going
-   back instead of as another forward step. Shorter than .reveal above - this
+   back instead of as another forward step. Shorter than .reveal above, since this
    fires on every navigation, and anything slower starts feeling like latency. */
 @keyframes step-in-forward {
   from {
@@ -130,7 +130,7 @@ body {
 }
 
 /* The wordmark sits outside the keyed content block, so it animates once on
-   load and then holds still across every step change - which is the point:
+   load and then holds still across every step change, which is the point:
    it's the fixed thing the changing screens move underneath. */
 @keyframes wordmark-in {
   from {
@@ -148,7 +148,7 @@ body {
 }
 
 /* Buttons lift slightly toward the pointer and settle on press. Transform and
-   box-shadow only - no layout-affecting properties, so hovering can't reflow
+   box-shadow only, with no layout-affecting properties, so hovering can't reflow
    the row. */
 .cta-lift {
   transition:
@@ -264,7 +264,7 @@ body {
   }
 
   /* The onboarding motion above is decoration by definition, so it goes
-     entirely - but each of these animations also supplies the element's
+     entirely, but each of these animations also supplies the element's
      final opacity via `both`, so they have to be reset to visible rather than
      just switched off, or the intro screens would render blank. NameScreen
      makes the same check in JS to skip its greeting delay outright. */
@@ -290,19 +290,19 @@ body {
     animation: none;
   }
 
-  /* Honoured even though it costs this user the target cue - an extension
+  /* Honoured even though it costs this user the target cue. An extension
      that exists to reduce motion cannot itself ignore the OS-level request
      for it. Safe for the measurement: every rule compares a user's own
      conditions against each other, never one user against another, so a
      cue that is absent for the whole session cancels out of every
-     comparison it feeds. (trial-drift is deliberately NOT disabled here -
-     it is the motion trial's independent variable, not decoration.) */
+     comparison it feeds. (trial-drift is deliberately NOT disabled here,
+     because it is the motion trial's independent variable, not decoration.) */
   .trial-target-pulse {
     animation: none;
   }
 
   /* DotCalibration.tsx also zeroes its own transition-duration and arrival
-     offset under this same query, so this is belt-and-suspenders - but it
+     offset under this same query, so this is belt-and-suspenders, but it
      means the instant-jump behavior holds even if that JS check is ever
      bypassed or the media query changes after mount. */
   .dot-shockwave {
@@ -334,12 +334,12 @@ body {
 }
 
 /* Gradient/mask centers sit off-center toward local +X (the "front"), not
-   dead-center - App.tsx's animation loop rotates this whole element to
+   dead-center, because App.tsx's animation loop rotates this whole element to
    align local +X with the actual velocity direction every frame
    (rotate(angleDeg)), so shifting the falloff here bakes a trailing fade
    into the shape that automatically points backward once rotated, at zero
    per-frame cost (no JS-side blur recompute, no extra element). Pulled the
-   offset/spread back in from 60%/72% - the trail read as too long combined
+   offset/spread back in from 60%/72%, because the trail read as too long combined
    with App.tsx's STRETCH_K elongation. filter: blur softens the shape's own
    edge (mask-image alone still left a defined-looking boundary). */
 .gaze-blob-morph {
@@ -382,7 +382,7 @@ body {
 }
 
 /* Soft pulse on the trial's target circle. Applied to EVERY trial, never just
-   some of them - profile_rules.py only ever compares conditions against each
+   some of them, since profile_rules.py only ever compares conditions against each
    other (baseline vs spaced / contrast / motion), so a cue present uniformly
    shifts all buckets together and leaves those relative comparisons intact.
    Applying it to only some trials would have silently biased exactly the
@@ -425,7 +425,7 @@ body {
 .dot-dwell {
   /* `both`, not `forwards`: DotCalibration.tsx now delays this by
      arrivalDelayMs while the dot is still travelling, and `forwards` alone
-     only holds the *end* state after the animation - during the delay itself
+     only holds the *end* state after the animation, so during the delay itself
      the ring would fall back to the SVG default stroke-dashoffset (0, i.e.
      fully drawn) and flash "already full" before snapping back to empty when
      the fill actually starts. `both` also applies the from-keyframe (empty)
@@ -433,14 +433,14 @@ body {
   animation: dot-dwell var(--dwell-ms, 1300ms) linear both;
 }
 
-/* Fires once the dot lands in its new spot - a separate ring sitting behind
+/* Fires once the dot lands in its new spot: a separate ring sitting behind
    the solid fixation dot rather than an effect on the dot itself, since the
    dot has to stay a crisp, fully-opaque fixation target for the whole dwell.
    Same box-shadow-ring technique as .trial-target-pulse above, but single-shot
    (`both` fill-mode, no `infinite`) and keyed per dot in DotCalibration.tsx so
    it restarts on every arrival instead of looping. animation-delay is set
    inline to match the move transition's duration, so the burst lands exactly
-   when the dot's travel does - the same moment CALIBRATION_SETTLE_MS's window
+   when the dot's travel does, the same moment CALIBRATION_SETTLE_MS's window
    opens, doubling as a "look now, hold steady" cue. */
 @keyframes dot-shockwave {
   0% {

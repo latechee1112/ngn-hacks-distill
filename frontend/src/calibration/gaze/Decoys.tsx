@@ -1,7 +1,7 @@
 // Fake sidebar + ad shown alongside every trial. Both are clickable and feed
 // CalibrationTrial.distractorClickCount (direct behavioral evidence for the
 // backend's decoy-distraction rule) and, when the camera is on, the gaze
-// hit-testing in hitTest.ts (which looks these two elements up by id - large
+// hit-testing in hitTest.ts (which looks these two elements up by id, and they are large
 // enough targets to be measurable against ~85-90px gaze error, unlike the
 // in-grid click-target shapes).
 //

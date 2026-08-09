@@ -4,8 +4,8 @@
 // permission, 9 gaze dots, practice, 5 timed trials) just to get a profile
 // into chrome.storage is a slow loop to sit through on every reload. Saving
 // one run and replaying it makes that instant. It doubles as a real user
-// feature - moving a profile to another browser or machine without redoing
-// the tasks - which is why the file is versioned rather than an ad-hoc dump.
+// feature, moving a profile to another browser or machine without redoing
+// the tasks, which is why the file is versioned rather than an ad-hoc dump.
 //
 // Everything here treats file contents as UNTRUSTED. A calibration file is
 // just a .json the user picked off disk; it could be hand-edited, truncated,
@@ -61,7 +61,7 @@ function validateProfile(v: unknown): { ok: true; profile: VisualProfile } | { o
   if (typeof v.progressiveReveal !== 'boolean') missing.push('progressiveReveal')
   if (!oneOf(v.contrastMode, CONTRAST_MODES)) missing.push('contrastMode')
   if (!oneOf(v.source, SOURCES)) missing.push('source')
-  // Genuinely optional in VisualProfile - absent is valid, wrong is not.
+  // Genuinely optional in VisualProfile: absent is valid, wrong is not.
   if (v.preferredRegion !== undefined && v.preferredRegion !== null && !oneOf(v.preferredRegion, REGIONS)) {
     missing.push('preferredRegion')
   }
@@ -149,7 +149,7 @@ export function calibrationFileName(file: CalibrationFile): string {
   return `distill-calibration-${stamp}.json`
 }
 
-// Blob + object URL rather than a data: URI - an extension page's CSP blocks
+// Blob + object URL rather than a data: URI, because an extension page's CSP blocks
 // navigation to data: URLs, and a blob: URL of the page's own origin is not
 // subject to that. Revoked on the next task, once the click has been handled.
 export function downloadCalibrationFile(file: CalibrationFile): void {

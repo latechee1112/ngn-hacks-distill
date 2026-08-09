@@ -1,4 +1,4 @@
-// 9-point calibration sequence. No manual model-fitting needed here -
+// 9-point calibration sequence. No manual model-fitting needed here, because
 // useGazeTracker.ts's registerCalibrationPoint does the whole affine fit +
 // gradient fine-tune internally via WebEyeTrack.adapt(), fed a rolling
 // buffer of recent open-eye frames rather than a single clicked-moment
@@ -6,14 +6,14 @@
 
 export interface CalibrationDot {
   id: string
-  // Viewport fractions, 0-1. Corners + edge midpoints + center - the
+  // Viewport fractions, 0-1. Corners + edge midpoints + center. The
   // library's own default maxPoints is 5; raised to 9 for headroom.
   xFraction: number
   yFraction: number
 }
 
 // Order deliberately alternates vertical (and mostly horizontal) direction
-// every step - center, then zig-zagging corners/edges - instead of the
+// every step (center, then zig-zagging corners/edges) instead of the
 // obvious row-by-row top-to-bottom sweep. A monotonic sweep means every
 // transition points the same way, so if any pre-settle frames leak into a
 // dot's fit (see CALIBRATION_SETTLE_MS below) they all bias that dot's
@@ -42,7 +42,7 @@ export function dotToNormalizedPoint(dot: CalibrationDot): [number, number] {
 // makes the sequence feel less rushed, at the cost of a longer run overall
 // (see the intro copy's stated duration in DotCalibration.tsx, which is
 // derived from this). CALIBRATION_SETTLE_MS below is deliberately NOT scaled
-// with it - that budget covers reaction time and the saccade, which do not
+// with it, because that budget covers reaction time and the saccade, which do not
 // get slower just because the dot waits longer; leaving it fixed simply
 // means more of the extra time lands in the capture window.
 export const CALIBRATION_DOT_INTERVAL_MS = 2340
@@ -54,11 +54,11 @@ export const CALIBRATION_DOT_INTERVAL_MS = 2340
 export const CALIBRATION_MOVE_MS = 240
 
 // How long after a new dot appears to wait before the capture buffer starts
-// filling - covers reaction time + the saccade to the dot + micro-settle,
+// filling. Covers reaction time + the saccade to the dot + micro-settle,
 // none of which reflect the eye actually being on-target yet. Without this,
 // those early frames get labeled with the new dot's position while the eye
-// is still near the *previous* dot, which - combined with a one-directional
-// dot order - taught the model a systematic directional bias rather than
+// is still near the *previous* dot, which (combined with a one-directional
+// dot order) taught the model a systematic directional bias rather than
 // random noise. DotCalibration.tsx clears the tracker's buffer at this mark
 // rather than relying on CALIBRATION_SAMPLE_BUFFER_SIZE's rolling window to
 // age the contaminated frames out; a bigger buffer (useGazeTracker.ts) only

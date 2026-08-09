@@ -21,7 +21,7 @@ export default function WelcomeScreen({
   onSkip: () => void
   onLoadProfile: () => void
   importError: string
-  // Reachable in both directions - it is the flow's first screen, but also
+  // Reachable in both directions. It is the flow's first screen, but also
   // where the name screen's "back" lands, and that has to read as going back.
   direction: 'forward' | 'back'
 }) {
@@ -33,7 +33,7 @@ export default function WelcomeScreen({
       <Reveal delay={80}>
         <p className="max-w-md text-body text-on-surface-variant">
           A few quick tasks tell Distill how you scan a page, so it can pick spacing, contrast, and motion
-          settings that actually work for you - instead of one-size-fits-all defaults.
+          settings that actually work for you, instead of one-size-fits-all defaults.
         </p>
       </Reveal>
       <Reveal delay={160}>

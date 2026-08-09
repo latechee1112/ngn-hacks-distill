@@ -1,8 +1,8 @@
 // Fixed 5-trial calibration sequence. Each trial's `condition` string and
 // `objectCount` are chosen to line up exactly with the backend's rule
 // matching in backend/services/profile_rules.py:
-//   - clutter rule buckets ALL trials by objectCount (<=6 vs >6)
-//   - spacing/contrast/motion rules compare a "baseline" bucket (condition
+//   1. clutter rule buckets ALL trials by objectCount (<=6 vs >6)
+//   2. spacing/contrast/motion rules compare a "baseline" bucket (condition
 //     null, or containing "baseline") against a bucket matching "spac" /
 //     "contrast" / "motion" respectively
 //
@@ -21,7 +21,7 @@ export interface TrialConfig {
 }
 
 // Raised from 15s. This is a backstop against a trial hanging forever, not a
-// speed test - the profile rules only ever compare completion times between
+// speed test. The profile rules only ever compare completion times between
 // conditions, so nobody's absolute time matters and there is no reason to
 // squeeze it. 15s was tight enough that a user who needed a moment to orient
 // (exactly the audience this extension is built for) got silently recorded as
@@ -36,7 +36,7 @@ export const TRIAL_TIMEOUT_MS = 20000
 // just mean they were still working when the clock ran out.
 export const NUDGE_AFTER_MS = 10000
 
-// Untimed, never submitted, never scored - it exists purely so the first
+// Untimed, never submitted, never scored. It exists purely so the first
 // *measured* trial isn't also the one where the user is still working out
 // what the task is. baseline-low is the bucket every other condition gets
 // compared against (profile_rules.py's _is_baseline), so contaminating it
@@ -70,20 +70,20 @@ export const TRIALS: TrialConfig[] = [
     condition: 'increasedSpacing',
     objectCount: 10,
     variant: 'spacing',
-    instructions: 'Same task - the shapes have more room this time.',
+    instructions: 'Same task, but the shapes have more room this time.',
   },
   {
     id: 'contrast',
     condition: 'enhancedContrast',
     objectCount: 10,
     variant: 'contrast',
-    instructions: 'Same task - the blue circle stands out more this time.',
+    instructions: 'Same task, but the blue circle stands out more this time.',
   },
   {
     id: 'motion',
     condition: 'reducedMotion',
     objectCount: 10,
     variant: 'motion',
-    instructions: 'Same task - some shapes drift around. Just find the blue one.',
+    instructions: 'Same task, but some shapes drift around. Just find the blue one.',
   },
 ]

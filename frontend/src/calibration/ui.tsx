@@ -1,7 +1,7 @@
 import Icon from '../sidepanel/Icon'
 
 // Shared chrome for every wizard screen. Extracted from App.tsx once the two
-// intro screens grew real markup of their own - they import from here rather
+// intro screens grew real markup of their own. They import from here rather
 // than from App.tsx, which would otherwise be a circular import.
 
 // Not exported: this file is component-only so Fast Refresh keeps working
@@ -45,7 +45,7 @@ export function SecondaryButton({ onClick, children }: { onClick: () => void; ch
   )
 }
 
-/** Quiet text-only affordance - back links, "skip", file import. */
+/** Quiet text-only affordance: back links, "skip", file import. */
 export function QuietButton({
   onClick,
   children,
@@ -136,7 +136,7 @@ export function Shell({
   progress?: number
   // Changing this replays the enter animation. Passed explicitly (rather than
   // keying <Shell> itself from the caller) so the glow blooms and the outer
-  // layout survive the step change - only the content block re-enters.
+  // layout survive the step change, so only the content block re-enters.
   animKey?: string
   direction?: 'forward' | 'back'
 }) {

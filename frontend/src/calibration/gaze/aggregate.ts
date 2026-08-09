@@ -17,7 +17,7 @@ const EMPTY_STATS: TrialGazeStats = {
 
 // WebEyeTrack's internal KalmanFilter2D is never reset between trials, so a
 // trial's first samples are still smoothed toward the previous trial's gaze
-// position - drop them rather than let stale carryover skew dispersion/
+// position. Drop them rather than let stale carryover skew dispersion/
 // acquisition time.
 const SETTLE_MS = 300
 

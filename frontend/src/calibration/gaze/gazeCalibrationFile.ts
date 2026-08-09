@@ -7,7 +7,7 @@
 //
 // WebEyeTrack's calibration lives in two places: an affine matrix (a tf
 // Tensor2D on a private field) and a gradient fine-tune of the BlazeGaze
-// weights. Neither is reachable through the public API - there is no export,
+// weights. Neither is reachable through the public API: there is no export,
 // no setter, and constructing a replacement tf.Tensor would need a second
 // @tensorflow/tfjs instance whose kernel registry is not the one the bundled
 // copy uses. Replaying the raw inputs to adapt() is not an option either:
@@ -44,7 +44,7 @@ export interface GazeCalibrationFile {
   savedAt: number
   // Metadata only. normPog is viewport-normalized so the fit is resolution
   // independent, but the mapping still encodes where the camera sits relative
-  // to the screen - a file captured on a very differently shaped window is
+  // to the screen, so a file captured on a very differently shaped window is
   // worth a warning rather than silent trust.
   viewport: { width: number; height: number }
   points: GazeCalibrationPoint[]
@@ -56,7 +56,7 @@ export type GazeParseResult =
   | { ok: false; error: string }
 
 // Solves a 3x3 system by Gaussian elimination with partial pivoting. Returns
-// null when the matrix is singular - which happens for real, not just in
+// null when the matrix is singular, which happens for real, not just in
 // theory: dots captured while the face was lost collapse to identical
 // observations, leaving the normal equations rank deficient.
 function solve3x3(a: number[][], b: number[]): [number, number, number] | null {
@@ -200,13 +200,13 @@ export function parseGazeCalibrationFile(raw: string): GazeParseResult {
   const width = viewport && isFiniteNumber(viewport.width) ? viewport.width : window.innerWidth
   const height = viewport && isFiniteNumber(viewport.height) ? viewport.height : window.innerHeight
 
-  // Not fatal - the fit is in normalized units, so a different window size
+  // Not fatal. The fit is in normalized units, so a different window size
   // still broadly applies. But the camera-to-screen geometry it encodes does
   // not survive a big change, so say so rather than pretending otherwise.
   const ratio = Math.max(width / window.innerWidth, window.innerWidth / width)
   const warning =
     ratio > 1.25
-      ? `Saved at ${Math.round(width)}x${Math.round(height)}, this window is ${window.innerWidth}x${window.innerHeight} - accuracy may be off.`
+      ? `Saved at ${Math.round(width)}x${Math.round(height)}, this window is ${window.innerWidth}x${window.innerHeight}, so accuracy may be off.`
       : undefined
 
   return {

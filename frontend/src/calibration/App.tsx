@@ -26,7 +26,7 @@ import { PRACTICE_TRIAL, TRIALS } from './trials'
 import { PrimaryButton, QuietButton, Reveal, SecondaryButton, Shell } from './ui'
 import WelcomeScreen from './WelcomeScreen'
 
-// Local dev backend - same origin the background service worker's
+// Local dev backend, the same origin the background service worker's
 // analyze-page calls use. Unlike a content script, this page runs at the
 // extension's own chrome-extension:// origin, which is already on the
 // backend's CORS allowlist (see backend/.env's CORS_ORIGINS), so it can
@@ -39,7 +39,7 @@ async function markDismissed() {
     const record: StoredCalibration = { dismissed: true }
     await chrome.storage.local.set({ [CALIBRATION_STORAGE_KEY]: record })
   } catch {
-    // Best-effort - worst case the popup's "Finish setup" banner reappears.
+    // Best-effort. Worst case, the popup's "Finish setup" banner reappears.
   }
 }
 
@@ -82,17 +82,17 @@ function App() {
   // Kept separate from `error` above: that one owns the whole 'error' step
   // (a failed backend submit, with its own retry screen), while this renders
   // inline under the welcome screen's load button and must not navigate away
-  // from it - picking the wrong file should leave you exactly where you were,
+  // from it. Picking the wrong file should leave you exactly where you were,
   // free to pick another.
   const [importError, setImportError] = useState('')
   const [importedFromFile, setImportedFromFile] = useState(false)
-  // Purely a display label for the popup's profile card - nothing reads it to
+  // Purely a display label for the popup's profile card. Nothing reads it to
   // make a decision, and leaving it blank changes nothing but the wording there.
   const [userName, setUserName] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [gazeSaveNote, setGazeSaveNote] = useState('')
 
-  // Gaze state lives in refs, not React state - samples arrive many times a
+  // Gaze state lives in refs, not React state, because samples arrive many times a
   // second via the tracker's callback and never need a re-render themselves.
   const gazeEnabledRef = useRef(false)
   const gazeSamplesRef = useRef<PageGazePoint[]>([])
@@ -109,9 +109,9 @@ function App() {
   // MIN_FRAME_INTERVAL_MS) and carry real spatial noise per sample, so two
   // consecutive samples can point in meaningfully different directions even
   // when gaze hasn't actually moved. Smoothing this *before* the speed-capped
-  // chase below is what actually removes the jump-and-reverse look - the
+  // chase below is what actually removes the jump-and-reverse look. The
   // speed cap alone only bounds how fast the dot can move, not how often its
-  // target direction flips. Kept short - long enough to damp single-sample
+  // target direction flips. Kept short: long enough to damp single-sample
   // noise, short enough that it isn't itself a second source of lag on top
   // of the speed cap below (100ms/px was: ~240ms here + the speed cap
   // compounding into up to ~1s to settle after a real eye jump).
@@ -119,12 +119,12 @@ function App() {
   const TARGET_SMOOTHING_MS = 90
 
   // What's actually drawn on screen chases the (now smoothed) gaze target at
-  // a capped rate rather than snapping to it every tick - eyes dart (saccades
+  // a capped rate rather than snapping to it every tick. Eyes dart (saccades
   // move essentially instantly), and following that exactly is what read as
   // "darting"/sudden movement. Deliberately lagging behind fast eye motion,
   // rather than teleporting with it, is what makes this read as calm.
   // Separate ref from latestGazePointRef (which still holds the raw, un-
-  // smoothed sample for e.g. trial scoring elsewhere). Raised from 1.1 -
+  // smoothed sample for e.g. trial scoring elsewhere). Raised from 1.1:
   // stacked with TARGET_SMOOTHING_MS above, the old value made real eye
   // jumps take close to a second to settle; this closes distance roughly
   // twice as fast once the (now faster-converging) smoothed target has
@@ -134,18 +134,18 @@ function App() {
   const DISPLAY_MAX_SPEED_PX_MS = 2.2
 
   // Comet stretch: derived from the *displayed* (already speed-limited)
-  // position's own motion, then smoothed further - see VELOCITY_SMOOTHING.
+  // position's own motion, then smoothed further. See VELOCITY_SMOOTHING.
   const prevDisplayedPosRef = useRef<{ x: number; y: number } | null>(null)
   const smoothedVelRef = useRef({ x: 0, y: 0 })
   // Time-based smoothing behaves consistently on 60Hz and high-refresh
   // displays instead of depending on how frequently the callback happens.
   const VELOCITY_SMOOTHING_MS = 160
   // Below this fraction of DISPLAY_MAX_SPEED_PX_MS, treat as "not moving"
-  // and hold a plain circle - without this, residual jitter below the
+  // and hold a plain circle. Without this, residual jitter below the
   // smoothing floor still nudges scaleX/scaleY off 1 and makes the
   // (otherwise invisible-when-circular) rotation visible as a wobble.
   const SPEED_DEADZONE = 0.2
-  // Pulled back down a bit from 0.6/0.2 - shortens the comet elongation
+  // Pulled back down a bit from 0.6/0.2, which shortens the comet elongation
   // (the trail's actual length is this times the CSS gradient's own
   // baked-in asymmetry in index.css's gaze-blob-morph).
   const STRETCH_K = 0.48
@@ -159,7 +159,7 @@ function App() {
     }
   }, [])
 
-  // The blob runs across practice AND the real trials - practice exists so
+  // The blob runs across practice AND the real trials. Practice exists so
   // nothing about the measured trials is a first-time experience, and a gaze
   // indicator appearing out of nowhere the moment scoring starts would defeat
   // that. Derived into a boolean (rather than depending on `step` directly)
@@ -199,7 +199,7 @@ function App() {
 
       const dt = prevTickAtRef.current ? now - prevTickAtRef.current : 0
 
-      // Low-pass the raw target itself before chasing it - see
+      // Low-pass the raw target itself before chasing it. See
       // smoothedTargetRef's comment above for why this (not just the speed
       // cap below) is what fixes the glitchy jump-around look.
       const smoothed = smoothedTargetRef.current
@@ -295,7 +295,7 @@ function App() {
   }
 
   // The practice run's own CalibrationTrial is discarded, never added to
-  // `trials` and never submitted - see PRACTICE_TRIAL in trials.ts. Its gaze
+  // `trials` and never submitted. See PRACTICE_TRIAL in trials.ts. Its gaze
   // samples are dropped too, and the trial clock only starts here, so the
   // first *measured* trial's window can't be polluted by however long
   // someone spent getting comfortable with the practice one.
@@ -306,11 +306,11 @@ function App() {
   }
 
   // A correct trial click is a free, known (position, was-looking-here)
-  // pair - feeding it into the same registerCalibrationPoint used by the
+  // pair. Feeding it into the same registerCalibrationPoint used by the
   // 9-dot phase lets the mapping keep correcting itself as head position
   // drifts over the session, instead of only fitting once at the start.
   // x/y here are screen pixels (TrialTask's getBoundingClientRect); convert
-  // to the tracker's viewport-normalized [-0.5, 0.5] convention - the
+  // to the tracker's viewport-normalized [-0.5, 0.5] convention, the
   // inverse of hitTest.ts's toPagePoint.
   //
   // maxSamples=4 summarises roughly the 400ms around the click, rather than
@@ -319,7 +319,7 @@ function App() {
   // of clicking. It used to be 2 purely to keep WebEyeTrack.adapt()'s cost
   // down; that call is gone (see useGazeTracker.ts), so this is now chosen
   // for what makes the median robust rather than for what the main thread
-  // could survive. Called directly - registering a point is a 3x3 solve now,
+  // could survive. Called directly, since registering a point is a 3x3 solve now,
   // so there is nothing left worth deferring off the click handler.
   function handleTargetHit(x: number, y: number) {
     if (!gazeEnabledRef.current) return
@@ -394,7 +394,7 @@ function App() {
     const input = event.currentTarget
     const picked = input.files?.[0]
     // Cleared before anything else so re-picking the SAME path fires `change`
-    // again - Chrome suppresses the event when the value is unchanged, which
+    // again. Chrome suppresses the event when the value is unchanged, which
     // otherwise makes the second load of a file you just re-exported look
     // like a dead button.
     input.value = ''
@@ -403,7 +403,7 @@ function App() {
     setImportError('')
     const parsed = parseCalibrationFile(await picked.text())
     if (!parsed.ok) {
-      setImportError(`Couldn't load that file - ${parsed.error}.`)
+      setImportError(`Couldn't load that file (${parsed.error}).`)
       return
     }
 
@@ -439,7 +439,7 @@ function App() {
     const matrix = tracker.getGazeCorrection() ?? fitAffine(pairs)
     if (!matrix) {
       setGazeSaveNote(
-        `Couldn't fit a mapping from ${pairs.length} point${pairs.length === 1 ? '' : 's'} - redo the dots with your face in frame.`,
+        `Couldn't fit a mapping from ${pairs.length} point${pairs.length === 1 ? '' : 's'}. Redo the dots with your face in frame.`,
       )
       return
     }
@@ -451,14 +451,14 @@ function App() {
     const meanError = residualError(matrix, pairs)
     setGazeSaveNote(
       `Saved ${pairs.length} points · mean error ${(meanError * 100).toFixed(1)}% of the viewport${
-        meanError > 0.12 ? ' - high, consider redoing the dots' : ''
+        meanError > 0.12 ? ', which is high, so consider redoing the dots' : ''
       }.`,
     )
   }
 
   // Renders the per-step screen. Kept as a nested function (rather than
   // inline in the final return) so the <video> element below can sit
-  // outside this step-conditional entirely - it must stay mounted across
+  // outside this step-conditional entirely. It must stay mounted across
   // the 'gazeCalibration' -> 'trials' transition (see GAZE_VIDEO_ID's
   // comment in useGazeTracker.ts), which an early-return per step here
   // would otherwise defeat by unmounting the whole tree on every step change.
@@ -497,14 +497,14 @@ function App() {
         <Reveal delay={80}>
           <p className="text-body text-on-surface-variant">
             Distill can use your camera to see where you're looking during the tasks below, which makes the result
-            more specific to you - for example, noticing if your attention keeps drifting to distracting elements.
+            more specific to you. For example, it can notice if your attention keeps drifting to distracting elements.
             Nothing is ever recorded or sent anywhere; it's only used live, on this page, to score the tasks.
           </p>
         </Reveal>
         <Reveal delay={160}>
           <div className="flex flex-wrap justify-center gap-3">
             <PrimaryButton onClick={enableCamera}>Enable camera</PrimaryButton>
-            <SecondaryButton onClick={() => go('practice')}>Skip - continue without camera</SecondaryButton>
+            <SecondaryButton onClick={() => go('practice')}>Continue without camera</SecondaryButton>
           </div>
         </Reveal>
       </Shell>
@@ -527,7 +527,7 @@ function App() {
         <p className="text-meta font-semibold tracking-[0.08em] text-on-surface-variant uppercase">Practice</p>
         <h1 className="text-title font-semibold text-on-background">Let's try one first</h1>
         <p className="max-w-md text-body text-on-surface-variant">
-          This one isn't scored - it's just so the real tasks aren't the first time you've seen this. Take as long
+          This one isn't scored. It's just so the real tasks aren't the first time you've seen this. Take as long
           as you like.
         </p>
         <TrialTask
@@ -538,7 +538,7 @@ function App() {
           isPractice
         />
         {/* Development affordance, placed here because this is the first
-            pause after the dot phase - the mapping exists, and the camera is
+            pause after the dot phase: the mapping exists, and the camera is
             still running. Hidden when the mapping was itself loaded from a
             file, since re-saving it would just round-trip the same numbers. */}
         {gazeEnabledRef.current && !tracker.isCorrectionFromFile() && (
@@ -587,7 +587,7 @@ function App() {
         <h1 className="text-title font-semibold text-on-background">Couldn't reach Distill's backend</h1>
         <p className="text-meta text-danger-text">{error}</p>
         <p className="text-body text-on-surface-variant">
-          Make sure the backend is running, or skip for now - you can redo this anytime.
+          Make sure the backend is running, or skip for now. You can redo this anytime.
         </p>
         <div className="flex gap-3">
           <PrimaryButton onClick={retrySubmit}>Try again</PrimaryButton>
@@ -602,7 +602,7 @@ function App() {
       <Shell showGlow animKey="skipped">
         <h1 className="hero-title text-display font-semibold">No problem</h1>
         <p className="text-body text-on-surface-variant">
-          Distill will use sensible defaults. You can close this tab - the "Finish setup" reminder in the extension
+          Distill will use sensible defaults. You can close this tab, and the "Finish setup" reminder in the extension
           popup will bring you back here anytime.
         </p>
         <PrimaryButton onClick={() => window.close()}>Close this tab</PrimaryButton>
@@ -628,7 +628,7 @@ function App() {
       {importedFromFile && (
         <Reveal delay={60}>
           <p className="text-body text-on-surface-variant">
-            Restored from a saved file - the tasks were skipped.
+            Restored from a saved file, so the tasks were skipped.
           </p>
         </Reveal>
       )}
@@ -662,7 +662,7 @@ function App() {
 
   // The camera feed itself: must stay mounted for the tracker's whole
   // lifetime (see GAZE_VIDEO_ID's comment in useGazeTracker.ts), so it lives
-  // here rather than inside any per-step screen - visible in the corner only
+  // here rather than inside any per-step screen. Visible in the corner only
   // during calibration, visually hidden (but still playing) afterwards.
   return (
     <>
@@ -691,17 +691,17 @@ function App() {
         // it has to stay mounted across the practice -> trials step change.
         // Rendered inside either step's own screen it would be a different
         // subtree per step, so React would unmount and remount it at the
-        // boundary - resetting the opacity transition (a visible flicker)
+        // boundary, resetting the opacity transition (a visible flicker)
         // right as scoring begins.
         //
         // Outer div: position + velocity only (JS-written transform every
         // animation frame, see the effect above). Inner div: the organic
-        // morph animation (gaze-blob-morph, index.css) - kept on a separate
+        // morph animation (gaze-blob-morph, index.css), kept on a separate
         // element so the two animations don't fight over the same style
-        // properties. Pulled back down from 350px (too big) to 256px - still
+        // properties. Pulled back down from 350px (too big) to 256px, still
         // bigger than hitTest.ts's own ~85-90px gaze error estimate, so it
         // still honestly reads as an uncertainty blob, not a precise cursor.
-        // Cyan, not accent's blue (#2f6fb5) - the target shape itself is
+        // Cyan, not accent's blue (#2f6fb5), because the target shape itself is
         // bg-accent, so the gaze indicator needs a visibly different hue to
         // stay distinguishable from what's actually being clicked.
         <div

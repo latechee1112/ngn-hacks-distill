@@ -359,7 +359,7 @@ function App() {
       })) as { applied: boolean; active: boolean }
       setProgressiveRevealActive(response.active)
       if (enabled && !response.applied) {
-        setError('Not enough sections to paginate - showing full article.')
+        setError('Not enough sections to paginate, so showing the full article.')
       }
     } catch (err) {
       setError(`Couldn't toggle progressive reveal: ${String(err)}`)
@@ -477,7 +477,7 @@ function App() {
             )}
             {resolvedProfile.origin === 'default' && (
               <p className="mt-2 text-meta text-on-surface-muted">
-                Calibrate, or just keep browsing - Distill builds a profile from how you read.
+                Calibrate, or just keep browsing. Distill builds a profile from how you read.
               </p>
             )}
           </div>

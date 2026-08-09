@@ -7,7 +7,7 @@ export interface CalibrationTrial {
   objectCount?: number
   completionTimeMs?: number
   errorCount?: number
-  // Clicks on the decoy sidebar/ad shown alongside every trial - direct
+  // Clicks on the decoy sidebar/ad shown alongside every trial. Direct
   // behavioral evidence for the backend's decoy-distraction rule.
   distractorClickCount?: number
   // baseline | increasedSpacing | enhancedContrast | reducedMotion | ...
@@ -40,11 +40,11 @@ export interface CalibrationProfileResponse {
 }
 
 // chrome.storage.local key the calibration wizard writes to and the content
-// script reads from. Local (not sync) and keyed globally, not per-site -
-// the whole point is that it applies no matter what page you're on.
+// script reads from. Local (not sync) and keyed globally, not per-site,
+// because the whole point is that it applies no matter what page you're on.
 export const CALIBRATION_STORAGE_KEY = 'distillCalibrationProfile'
 
-// What the user asked to be called, from the wizard's welcome screen. Optional
+// What the user asked to be called, from the wizard's name screen. Optional
 // throughout: it is a display label for the popup's profile card and nothing
 // reads it to make a decision, so every consumer must render a sensible card
 // without it (a profile loaded from a file or derived from browsing has none).

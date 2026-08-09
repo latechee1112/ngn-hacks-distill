@@ -622,17 +622,12 @@ html[${REVEAL_ATTR}] .${UNSTICK_STICKY_CLASS} {
   top: auto !important;
   bottom: auto !important;
 }
-/* Text only - no filter. color has no effect on img/video/svg/canvas pixels to begin
-   with, so there is nothing here that needs to steer around media the way the old
-   grayscale() filter did. Has to repeat with a '*' descendant selector, not just rely
-   on inheritance from the first rule: an inherited value only applies where nothing
-   else in the cascade sets that property, and a host page's own link-color rule (no
-   !important needed) counts as such a value - it wins over inheriting the ancestor's
-   forced black regardless of how strong that ancestor's own !important is. */
-html[${SIMPLIFIED_ATTR}][${REVEAL_ATTR}] .${NEUTRAL_COLOR_CLASS},
-html[${SIMPLIFIED_ATTR}][${REVEAL_ATTR}] .${NEUTRAL_COLOR_CLASS} * {
-  color: #000 !important;
-}
+/* Forcing every descendant to black text regardless of its own background
+   turned white-on-dark text (dark-mode sites, colored cards, etc.) illegible -
+   black on black. The actual color forcing therefore happens in JS
+   (setReduceColorVariation / collectNeutralColorTargets), which only forces
+   text whose *effective* background resolves to white; this class just marks
+   the enabled region for state tracking and the link-underline rule below. */
 html[${SIMPLIFIED_ATTR}][${REVEAL_ATTR}] .${PRIMARY_CLASS}.${NEUTRAL_COLOR_CLASS} a:not(form a):not(button a) {
   text-decoration: underline !important;
 }
@@ -996,11 +991,71 @@ export function isColorVariationReduced(): boolean {
   return isSimplificationActive() && targets.length > 0 && targets.every((el) => el.classList.contains(NEUTRAL_COLOR_CLASS))
 }
 
+const NEUTRAL_COLOR_TEXT_CLASS = 'distill-neutral-color-text'
+// Bounds the scan on a very large document, same reasoning as MIN_TEXT_SCAN_BUDGET.
+const NEUTRAL_COLOR_SCAN_BUDGET = 6000
+// Anything at or above this on every channel reads as "white" for our purposes -
+// exact #fff is rare in the wild (off-whites, antialiasing) so a hard equality
+// check would miss most of what should qualify.
+const WHITE_BG_CHANNEL_MIN = 235
+
+function parseRGBA(value: string): { r: number; g: number; b: number; a: number } | null {
+  const match = value.match(/rgba?\(([^)]+)\)/)
+  if (!match) return null
+  const [r, g, b, a = 1] = match[1].split(',').map((part) => Number.parseFloat(part.trim()))
+  if ([r, g, b].some((n) => Number.isNaN(n))) return null
+  return { r, g, b, a }
+}
+
+// Walks up from `el` to find the nearest ancestor that actually paints a
+// background, then checks whether that color is white/near-white. An element
+// with no painted background anywhere up to <html> renders on the browser's
+// default white canvas, so that case also counts as white.
+function hasWhiteBackground(el: Element): boolean {
+  let node: Element | null = el
+  while (node) {
+    const rgba = parseRGBA(getComputedStyle(node).backgroundColor)
+    if (rgba && rgba.a > 0) {
+      return rgba.r >= WHITE_BG_CHANNEL_MIN && rgba.g >= WHITE_BG_CHANNEL_MIN && rgba.b >= WHITE_BG_CHANNEL_MIN
+    }
+    node = node.parentElement
+  }
+  return true
+}
+
+// Only the leaves worth forcing - same hasDirectText reasoning as
+// collectLargerTextTargets - and only where the effective background is
+// actually white, so black-on-dark text is never turned into black-on-black.
+function collectNeutralColorTargets(roots: Element[]): Element[] {
+  const candidates = new Set<Element>()
+  for (const root of roots) {
+    candidates.add(root)
+    root.querySelectorAll('*').forEach((el) => candidates.add(el))
+  }
+
+  const targets: Element[] = []
+  for (const el of candidates) {
+    if (targets.length >= NEUTRAL_COLOR_SCAN_BUDGET) break
+    if (!hasDirectText(el) || isProtectedFromSimplification(el)) continue
+    if (hasWhiteBackground(el)) targets.push(el)
+  }
+  return targets
+}
+
+function clearNeutralColorTargets(): void {
+  document.querySelectorAll<HTMLElement>(`.${NEUTRAL_COLOR_TEXT_CLASS}`).forEach((el) => {
+    el.classList.remove(NEUTRAL_COLOR_TEXT_CLASS)
+    el.style.removeProperty('color')
+  })
+}
+
 // Toggles desaturation across every primary region. There can be more than one
 // when the backend emphasizes several blocks, so changing only querySelector's
 // first match made the control appear ineffective on the rest of the content.
 // Pages without a detected primary region use the body, keeping the preference
 // useful for feeds, dashboards and search pages too.
+// Re-scans from scratch every call, same as setLargerText, so a page whose
+// layout shifted between toggles never leaves stale forced-black text behind.
 export function setReduceColorVariation(enabled: boolean): boolean {
   if (!isSimplificationActive()) return false
   const targets = getColorReductionTargets()
@@ -1009,6 +1064,16 @@ export function setReduceColorVariation(enabled: boolean): boolean {
     saveOriginal(el)
     el.classList.toggle(NEUTRAL_COLOR_CLASS, enabled)
   })
+
+  clearNeutralColorTargets()
+  if (enabled) {
+    collectNeutralColorTargets(targets).forEach((el) => {
+      saveOriginal(el)
+      const htmlEl = el as HTMLElement
+      htmlEl.classList.add(NEUTRAL_COLOR_TEXT_CLASS)
+      htmlEl.style.setProperty('color', '#000', 'important')
+    })
+  }
   return true
 }
 

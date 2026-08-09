@@ -14,7 +14,7 @@ const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-surface-variant focus-visible:ring-offset-2 focus-visible:ring-offset-background'
 
 // The dots used to begin the instant this component mounted, straight off the
-// back of the camera-permission prompt - nine targets appearing and vanishing
+// back of the camera-permission prompt: nine targets appearing and vanishing
 // on a 1.3s timer with a single line of explanation and no way to prepare.
 // Now: read what is about to happen, start it yourself, then a short count so
 // the first dot is expected rather than sprung.
@@ -53,15 +53,15 @@ function DotCalibration({
   const [loadError, setLoadError] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Read once via a lazy initializer - this component's lifetime is a handful
+  // Read once via a lazy initializer, since this component's lifetime is a handful
   // of seconds, so a live subscription to changes buys nothing, and state
   // (read freely during render) is the right tool here rather than a ref
   // (which react-hooks/refs flags reading during render, since a ref update
-  // wouldn't repaint - this one is never written after mount, so that's moot,
+  // wouldn't repaint; this one is never written after mount, so that's moot,
   // but state sidesteps the lint rule entirely). Mirrors App.tsx's own inline
   // check.
   const [reducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  // The very first dot has nothing to travel from, so it just appears -
+  // The very first dot has nothing to travel from, so it just appears, and
   // arrival is immediate either way. Every dot after that travels for
   // CALIBRATION_MOVE_MS, unless reduced motion asks for the old instant jump.
   const arrivalDelayMs = dotIndex === 0 || reducedMotion ? 0 : CALIBRATION_MOVE_MS
@@ -78,7 +78,7 @@ function DotCalibration({
     setLoadError('')
     const parsed = parseGazeCalibrationFile(await picked.text())
     if (!parsed.ok) {
-      setLoadError(`Couldn't load that file - ${parsed.error}.`)
+      setLoadError(`Couldn't load that file (${parsed.error}).`)
       return
     }
     if (parsed.warning) console.warn('[Distill]', parsed.warning)
@@ -96,7 +96,7 @@ function DotCalibration({
     // prompt, MediaPipe's WASM load and the first inference all resolve while
     // the user is still reading, so pressing "Start" lands on a tracker that
     // is already warm instead of one still initialising under the first dot.
-    // App.tsx renders the actual <video id={GAZE_VIDEO_ID}> element - it
+    // App.tsx renders the actual <video id={GAZE_VIDEO_ID}> element, and it
     // mounts in the same commit as this component (both appear together
     // once step becomes 'gazeCalibration'), so it's already in the DOM by
     // the time this effect runs.
@@ -108,7 +108,7 @@ function DotCalibration({
     if (phase !== 'countdown') return
     const tick = window.setTimeout(() => {
       // The final tick hands straight off to the dots rather than counting
-      // down to a displayed "0" - which also keeps the phase change inside
+      // down to a displayed "0", which also keeps the phase change inside
       // the timeout instead of making it a synchronous setState in this
       // effect's body (a cascading render, and a lint error).
       if (count <= 1) setPhase('dots')
@@ -125,7 +125,7 @@ function DotCalibration({
     }
     // Two-phase dwell: settle discards whatever the buffer picked up while
     // the eye was still moving toward this dot (reaction time + saccade),
-    // then capture registers only what accumulates after that - see
+    // then capture registers only what accumulates after that. See
     // CALIBRATION_SETTLE_MS in calibrationFit.ts for why this matters more
     // than it looks like it should. Both delays are pushed back by
     // arrivalDelayMs so that budget starts counting from when the dot
@@ -175,7 +175,7 @@ function DotCalibration({
         >
           I'm ready
         </button>
-        <p className="text-meta text-on-surface-muted">Nothing is recorded - the camera feed never leaves this page.</p>
+        <p className="text-meta text-on-surface-muted">Nothing is recorded. The camera feed never leaves this page.</p>
 
         {/* Development affordance, kept visually quiet so it reads as a tool
             rather than a step. */}
@@ -208,7 +208,7 @@ function DotCalibration({
   if (phase === 'countdown') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background text-center">
-        <p className="text-body text-on-surface-variant">Get ready - look at the first dot</p>
+        <p className="text-body text-on-surface-variant">Get ready, look at the first dot</p>
         <p aria-live="assertive" className="text-[64px] leading-none font-semibold text-on-background tabular-nums">
           {count}
         </p>
@@ -232,7 +232,7 @@ function DotCalibration({
         // this extension's motion-sensitive users, and the eye smooth-pursuing
         // the slide meant CALIBRATION_SETTLE_MS's reaction-time-plus-saccade
         // budget was covering the wrong window. Both are handled now rather
-        // than avoided - reducedMotion zeroes the transition (and the CSS
+        // than avoided: reducedMotion zeroes the transition (and the CSS
         // media query below independently kills the shockwave) for anyone who
         // asked for less motion, and arrivalDelayMs pushes the settle/capture
         // timers (see the effect above) back to start counting from when the
@@ -245,7 +245,7 @@ function DotCalibration({
             transitionDuration: reducedMotion ? '0ms' : `${CALIBRATION_MOVE_MS}ms`,
           }}
         >
-          {/* Transparent but for the box-shadow ring - the solid fixation dot
+          {/* Transparent but for the box-shadow ring. The solid fixation dot
               below renders on top of it, so this only ever contributes the
               expanding/fading ring, never a second solid circle. Keyed per
               dot so it remounts and restarts on every arrival. */}
@@ -267,7 +267,7 @@ function DotCalibration({
             {/* Remounted per dot (key) so the fill animation restarts from
                 empty each time rather than carrying the previous dot's
                 progress over. Delayed by arrivalDelayMs so it only starts
-                filling once the dot has actually landed - kept in step with
+                filling once the dot has actually landed, kept in step with
                 the settle/capture timers above, which the same delay offsets. */}
             <circle
               key={dotIndex}

@@ -15,7 +15,7 @@ interface Shape {
 // visual-search task and corrupted the very measurement being scored. Both
 // shapes now carry an identical accessible name, so nothing leaks through the
 // accessibility tree. Exported (rather than duplicated as a string literal in
-// hitTest.ts) so the markup and the selector can't drift apart - same pattern
+// hitTest.ts) so the markup and the selector can't drift apart, the same pattern
 // as Decoys.tsx's exported element ids.
 export const TARGET_ATTR = 'data-distill-target'
 export const TARGET_SELECTOR = `[${TARGET_ATTR}="true"]`
@@ -37,7 +37,7 @@ function TrialTask({
   trial: TrialConfig
   onComplete: (result: CalibrationTrial) => void
   // Fired only on a correct target click, with that button's on-screen
-  // center - a free, known (position, was-looking-here) pair App.tsx feeds
+  // center, which is a free, known (position, was-looking-here) pair App.tsx feeds
   // into live recalibration. Never fired for decoy/wrong-shape clicks,
   // since only a correct hit reliably means the gaze was actually there.
   onTargetHit?: (x: number, y: number) => void
@@ -45,7 +45,7 @@ function TrialTask({
   isPractice?: boolean
 }) {
   // App.tsx mounts a fresh TrialTask per trial (key={trial.id}), so these only
-  // ever need to be computed once per mount - no reset-on-prop-change effect.
+  // ever need to be computed once per mount, with no reset-on-prop-change effect.
   const [shapes] = useState<Shape[]>(() => buildShapes(trial.objectCount))
   // Refs, not state: click/timeout handlers need the current count and a
   // one-shot guard without waiting on a re-render.
@@ -58,7 +58,7 @@ function TrialTask({
 
   useEffect(() => {
     const nudge = window.setTimeout(() => setShowNudge(true), NUDGE_AFTER_MS)
-    // Practice is untimed on purpose - it is never scored or submitted, so a
+    // Practice is untimed on purpose. It is never scored or submitted, so a
     // clock would only add pressure with nothing to protect. The nudge above
     // still offers a way forward for someone who is stuck.
     const timeout = isPractice ? null : window.setTimeout(() => finish(false), TRIAL_TIMEOUT_MS)
@@ -125,11 +125,11 @@ function TrialTask({
             key={shape.index}
             type="button"
             onClick={(e) => handleClick(shape, e)}
-            // Identical for every shape - see TARGET_ATTR above.
+            // Identical for every shape. See TARGET_ATTR above.
             aria-label="Shape"
             {...(shape.isTarget ? { [TARGET_ATTR]: 'true' } : {})}
             // The target's pulse animates transform, so it replaces the hover
-            // scale rather than stacking with it - a CSS animation wins over a
+            // scale rather than stacking with it. A CSS animation wins over a
             // transition on the same property, so keeping both would just mean
             // a hover state that silently never applies.
             className={`h-16 w-16 rounded-full ${FOCUS_RING} ${
@@ -150,7 +150,7 @@ function TrialTask({
         ))}
       </div>
       {/* Fixed-height slot, always rendered. The nudge appears mid-trial, and
-          letting it grow the column would shift the shape grid - moving the
+          letting it grow the column would shift the shape grid, moving the
           target out from under a cursor already on its way to it, and
           invalidating the completion time being measured. */}
       <div className="flex h-16 items-start justify-center" aria-live="polite">

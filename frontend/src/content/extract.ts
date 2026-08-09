@@ -1,6 +1,7 @@
 import type { BoundingBox, ExtractionResult, Landmark, PageBlock } from '../types/page'
 import {
   isAdLike,
+  isConsentBannerLike,
   isConsentControlLike,
   isPrefilteredAd,
   isPopupLike,
@@ -306,7 +307,7 @@ function buildBlock(el: Element, counter: { n: number }, opts: { repeatedLink?: 
     isFormInstruction: isFormInstructionOf(el),
     isPasswordField: isPasswordFieldOf(el),
     isPaymentField: isPaymentFieldOf(el),
-    isConsentControl: isConsentControlLike(el),
+    isConsentControl: isConsentControlLike(el) || isConsentBannerLike(el),
     isWarning: isWarningLike(el),
     isAd: isAdLike(el),
     isStickyPromo: isStickyOrFixed(el) || isPopupLike(el),

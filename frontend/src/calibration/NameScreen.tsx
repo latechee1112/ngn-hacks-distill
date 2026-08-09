@@ -4,8 +4,8 @@ import { USER_NAME_MAX_LENGTH } from '../types/calibration'
 import { PrimaryButton, QuietButton, Reveal, Shell } from './ui'
 
 // How long the "Nice to meet you" beat holds before advancing. Long enough to
-// read, short enough that nobody waiting to get on with it feels held up -
-// and skipped entirely under prefers-reduced-motion (see below).
+// read, short enough that nobody waiting to get on with it feels held up.
+// Skipped entirely under prefers-reduced-motion (see below).
 const GREETING_MS = 900
 
 export default function NameScreen({
@@ -23,7 +23,7 @@ export default function NameScreen({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const timerRef = useRef<number | undefined>(undefined)
 
-  // Its own screen now, so the field is the one thing on it - focusing it lets
+  // Its own screen now, so the field is the one thing on it. Focusing it lets
   // someone type and press Enter without touching the mouse at all.
   useEffect(() => {
     inputRef.current?.focus()
@@ -33,7 +33,7 @@ export default function NameScreen({
   function submit() {
     const trimmed = userName.trim()
     // Blank is a perfectly good answer here (the name is only ever a display
-    // label), so there is nobody to greet - go straight through.
+    // label), so there is nobody to greet. Go straight through.
     if (!trimmed) {
       onContinue()
       return
@@ -73,7 +73,7 @@ export default function NameScreen({
             Sam" reads as yours in a way "Calibrated profile" does not. Nothing
             downstream branches on it. */}
         <p className="max-w-md text-body text-on-surface-variant">
-          Just so your profile has a name on it. Optional - it never leaves this browser.
+          Just so your profile has a name on it. Optional, and it never leaves this browser.
         </p>
       </Reveal>
       <Reveal delay={160} className="w-full">

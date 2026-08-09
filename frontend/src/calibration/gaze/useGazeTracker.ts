@@ -2,20 +2,20 @@ import { useCallback, useRef, useState } from 'react'
 import { WebEyeTrack, WebcamClient, type GazeResult } from 'webeyetrack'
 import { applyAffine, fitAffine, type AffineMatrix, type GazeCalibrationPoint } from './gazeCalibrationFile'
 
-// Deliberately NOT WebEyeTrackProxy - two reasons, both verified against the
+// Deliberately NOT WebEyeTrackProxy, for two reasons, both verified against the
 // installed package source (webeyetrack@0.0.2), not just its docs:
 //   1. The proxy's worker is broken as shipped: the package ships
 //      dist/index.worker.js.LICENSE.txt but not the actual worker file, and
 //      there is no `new Worker(...)` anywhere in dist/index.js at all.
-//   2. WebEyeTrack itself has zero worker dependency - step()/handleClick()
-//      run in plain async methods - so a worker was never actually needed
+//   2. WebEyeTrack itself has zero worker dependency, since step()/handleClick()
+//      run in plain async methods, so a worker was never actually needed
 //      for our case (a dedicated calibration tab, not a widget embedded in
 //      an arbitrary host page under memory/CPU pressure).
 // The proxy also attaches a global `window.addEventListener('click')` that
 // feeds every click on the page into calibration, indiscriminately. Driving
 // WebEyeTrack directly means we decide exactly when calibration data gets
 // registered: the 9 calibration dots, plus (App.tsx's handleTargetHit) a
-// correct trial click - never decoy clicks or wrong-shape clicks, which
+// correct trial click, never decoy clicks or wrong-shape clicks, which
 // don't reliably mean the gaze was actually there.
 const MAX_CALIBRATION_POINTS = 9
 
@@ -23,43 +23,43 @@ const MAX_CALIBRATION_POINTS = 9
 //
 // adapt() was the single worst thing happening on this page. Measured against
 // the bundle source, one call:
-//   - concatenates EVERY stored calibration entry's eye patches, not just the
-//     batch being registered. After the 9-dot phase that is 9 entries x 8
-//     frames of [128, 512, 3] floats - a ~57MB tensor, rebuilt from scratch
-//     each time;
-//   - runs blazeGaze.predict over all of it to refit the affine;
-//   - then runs tf.variableGrads (a full forward AND backward pass) over the
-//     same batch;
-//   - all synchronously, on the UI thread, with no worker (see above).
+//   1. concatenates EVERY stored calibration entry's eye patches, not just the
+//      batch being registered. After the 9-dot phase that is 9 entries x 8
+//      frames of [128, 512, 3] floats, a ~57MB tensor, rebuilt from scratch
+//      each time;
+//   2. runs blazeGaze.predict over all of it to refit the affine;
+//   3. then runs tf.variableGrads (a full forward AND backward pass) over the
+//      same batch;
+//   4. all synchronously, on the UI thread, with no worker (see above).
 // App.tsx fires this on every correct trial click, so the stall landed exactly
-// when the next trial's completion time starts being measured - the lag was
+// when the next trial's completion time starts being measured, so the lag was
 // corrupting the very number the trial exists to record. Capping the batch
 // (maxSamples) never helped, because the cost is dominated by the previously
 // stored dots, not by the new frames.
 //
-// What adapt() actually buys is an affine fit (computeAffineMatrixML - plain
+// What adapt() actually buys is an affine fit (computeAffineMatrixML, plain
 // least squares) plus one Adam step at lr 1e-5. That gradient step moves the
 // weights by ~1e-4 across a whole session: negligible. The affine is the real
 // calibration, and least-squares affine is something we can do ourselves over
-// nine (observed -> intended) pairs in microseconds - which is exactly what
+// nine (observed -> intended) pairs in microseconds, which is exactly what
 // gazeCalibrationFile.ts already implements for the save/load feature.
 //
 // So the tracker now fits and applies its own correction and never calls
 // adapt(). Three things fall out of that beyond the speed:
-//   - normPog is always the raw BlazeGaze prediction, because the library's
-//     own affineMatrix is never set. That makes the correction space constant.
-//     Previously it was not: the library refits its affine after every dot, so
-//     each dot was observed through a *different* correction, and a mapping
-//     fitted across them was fitted across mixed spaces. Saved calibration
-//     files inherited that inconsistency - a file captured after the dots was
-//     in library-corrected space but replayed, on load, against uncorrected
-//     predictions.
-//   - no eye patches need retaining between frames. Holding 8 x 512x128 RGBA
-//     ImageData (~2MB) and churning one per inference at 10Hz is gone.
-//   - drift correction actually works as originally intended, since a refit on
-//     each trial click now costs nothing.
+//   1. normPog is always the raw BlazeGaze prediction, because the library's
+//      own affineMatrix is never set. That makes the correction space constant.
+//      Previously it was not: the library refits its affine after every dot, so
+//      each dot was observed through a *different* correction, and a mapping
+//      fitted across them was fitted across mixed spaces. Saved calibration
+//      files inherited that inconsistency: a file captured after the dots was
+//      in library-corrected space but replayed, on load, against uncorrected
+//      predictions.
+//   2. no eye patches need retaining between frames. Holding 8 x 512x128 RGBA
+//      ImageData (~2MB) and churning one per inference at 10Hz is gone.
+//   3. drift correction actually works as originally intended, since a refit on
+//      each trial click now costs nothing.
 
-// Shared with App.tsx, which owns the actual <video> element - it must stay
+// Shared with App.tsx, which owns the actual <video> element. It must stay
 // mounted for the tracker's whole lifetime (calibration AND trials), not
 // just while DotCalibration is on screen. WebcamClient's frame loop checks
 // `this.videoElement.paused` every tick and silently no-ops otherwise; a
@@ -76,9 +76,13 @@ export const GAZE_VIDEO_ID = 'distill-gaze-video'
 const MIN_FRAME_INTERVAL_MS = 1000 / 10
 
 // How many recent open-eye predictions one registered point is summarised
-// from. At MIN_FRAME_INTERVAL_MS (~10Hz) this is roughly the last 800ms -
-// sized to use nearly the whole CALIBRATION_DOT_INTERVAL_MS dwell rather than
-// only its tail. Summarising a window (rather than taking the single frame at
+// from. At MIN_FRAME_INTERVAL_MS (~10Hz) this is roughly the last 800ms.
+// It was sized to cover nearly the whole dwell back when
+// CALIBRATION_DOT_INTERVAL_MS was 1300ms; at today's 2340ms it summarises the
+// final third instead, which is the settled part of the fixation and so still
+// the right frames. Raising it would average in more, at the cost of reaching
+// back toward the pre-settle window CALIBRATION_SETTLE_MS exists to exclude.
+// Summarising a window (rather than taking the single frame at
 // the moment of registration, which is all the library's own handleClick ever
 // uses) is what stops one blink or landmark glitch at exactly the wrong
 // millisecond from skewing a point permanently.
@@ -91,10 +95,10 @@ export interface GazeTracker {
   // x/y are viewport-normalized, range [-0.5, 0.5], same convention as
   // GazeResult.normPog. Records one (observed -> intended) pair and refits
   // the correction. maxSamples caps how many of the most recent buffered
-  // predictions are summarised - a dot uses its whole dwell, a trial click
+  // predictions are summarised: a dot uses its whole dwell, a trial click
   // only the frames either side of the click itself.
   registerCalibrationPoint: (x: number, y: number, maxSamples?: number) => void
-  // Drops whatever's accumulated in the prediction buffer - see
+  // Drops whatever's accumulated in the prediction buffer. See
   // CALIBRATION_SETTLE_MS in calibrationFit.ts. Lets a caller discard
   // pre-settle frames after a new dot appears, so only frames captured once
   // the eye has actually arrived contribute to the next registered point.
@@ -116,7 +120,7 @@ export function useGazeTracker(onSample: (result: GazeResult, capturedAt: number
   const activeRef = useRef(false)
   const [ready, setReady] = useState(false)
   // Rolling window of recent raw predictions, for registerCalibrationPoint to
-  // summarise - see CALIBRATION_SAMPLE_BUFFER_SIZE above.
+  // summarise. See CALIBRATION_SAMPLE_BUFFER_SIZE above.
   const recentRawPogsRef = useRef<[number, number][]>([])
   const calibPairsRef = useRef<GazeCalibrationPoint[]>([])
   const correctionRef = useRef<AffineMatrix | null>(null)
@@ -126,7 +130,7 @@ export function useGazeTracker(onSample: (result: GazeResult, capturedAt: number
     async (videoElementId: string) => {
       // Idempotent. A caller can start the camera itself and then mount
       // DotCalibration over the top of it, which starts the tracker on
-      // mount unconditionally - a second WebEyeTrack and a second
+      // mount unconditionally, and a second WebEyeTrack plus a second
       // WebcamClient on the same <video> would leave two inference loops
       // fighting over one element.
       if (activeRef.current) {
@@ -199,7 +203,7 @@ export function useGazeTracker(onSample: (result: GazeResult, capturedAt: number
     // face lost for its whole dwell simply contributes nothing rather than
     // summarising stale frames left over from the previous dot.
     if (recentRawPogsRef.current.length === 0) return
-    // Always the *most recent* frames, not the oldest - those are the ones
+    // Always the *most recent* frames, not the oldest, because those are the ones
     // closest to the moment being registered (a click, or the end of a dot's
     // dwell), same reasoning as the rolling buffer's own shift() above.
     const takeLast = maxSamples && maxSamples < recentRawPogsRef.current.length ? maxSamples : 0
@@ -214,7 +218,7 @@ export function useGazeTracker(onSample: (result: GazeResult, capturedAt: number
     }
     calibPairsRef.current.push({ observed: [axis(0), axis(1)], target: [x, y] })
 
-    // Refit across every pair gathered so far - nine dots, plus a point per
+    // Refit across every pair gathered so far: nine dots, plus a point per
     // correct trial click. This is the drift correction the trial-click path
     // was always meant to provide, now at a cost (a 3x3 least-squares solve)
     // that genuinely is free, instead of a ~57MB tensor round trip.
