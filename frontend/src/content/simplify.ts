@@ -99,14 +99,46 @@ function isProseLike(el: Element): boolean {
   return text / Math.max(links, 1) >= PROSE_MIN_CHARS_PER_LINK
 }
 
+// isProseLike only looks at aggregate text stats, so a marketing page whose "main"
+// wraps a hero banner (image next to a heading), a pricing table, and a long FAQ
+// still reads as prose by character/paragraph count alone. Narrowing that whole
+// container to 760px doesn't turn it into an article - it squeezes every
+// side-by-side row inside it (the hero included) into that same narrow strip,
+// which is what makes an image-and-heading row wrap down to one word per line.
+// Bounded depth/size keeps this cheap: real hero rows and multi-column layouts
+// show up within the first couple of levels at well over icon size.
+const SIDE_BY_SIDE_SCAN_DEPTH = 3
+const SIDE_BY_SIDE_MIN_SIZE = 120
+
+function hasSideBySideLayout(el: Element, depth = 0): boolean {
+  if (depth > SIDE_BY_SIDE_SCAN_DEPTH) return false
+
+  const children = Array.from(el.children).filter((child) => isVisible(child) && !isProtectedFromSimplification(child))
+  const sized = children
+    .map((child) => ({ child, rect: child.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width >= SIDE_BY_SIDE_MIN_SIZE && rect.height >= SIDE_BY_SIDE_MIN_SIZE)
+
+  for (let i = 0; i < sized.length; i++) {
+    for (let j = i + 1; j < sized.length; j++) {
+      const a = sized[i].rect
+      const b = sized[j].rect
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+      const sideBySide = overlapY > Math.min(a.height, b.height) * 0.5 && (a.right <= b.left + 4 || b.right <= a.left + 4)
+      if (sideBySide) return true
+    }
+  }
+
+  return children.some((child) => hasSideBySideLayout(child, depth + 1))
+}
+
 // Marks an element as the primary region, and gives it the reading column only if it
-// actually reads like an article - and only if the page's site rule (if any) hasn't
-// opted out, which is how a hand-tuned page keeps its own layout and gets nothing but
-// the blur it asked for.
+// actually reads like an article, with no side-by-side rows inside it that narrowing
+// would break - and only if the page's site rule (if any) hasn't opted out, which is
+// how a hand-tuned page keeps its own layout and gets nothing but the blur it asked for.
 function markPrimary(el: Element): void {
   el.classList.add(PRIMARY_CLASS)
   if (findSiteRule()?.disableReadingColumn) return
-  if (isProseLike(el)) el.classList.add(READING_COLUMN_CLASS)
+  if (isProseLike(el) && !hasSideBySideLayout(el)) el.classList.add(READING_COLUMN_CLASS)
 }
 
 // Prevents nested targets (e.g. an ad div inside an aside) from having opacity applied
